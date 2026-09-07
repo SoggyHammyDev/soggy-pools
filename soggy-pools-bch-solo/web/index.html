@@ -1278,235 +1278,133 @@ function renderWorkers(workers, networkDiff) {
     root.innerHTML =
       '<div class="empty"><strong>No miners connected</strong>' +
       'Point a miner at the address on this page, then check back here.</div>';
-
     return;
   }
 
-  const orderedWorkers =
-    [...workers].sort((a, b) => {
-      const aName =
-        minerDisplayName(a);
-
-      const bName =
-        minerDisplayName(b);
-
-      const friendly =
-        aName.localeCompare(
-          bName,
-          undefined,
-          {
-            numeric: true,
-            sensitivity: 'base'
-          }
-        );
-
-      if (friendly !== 0) {
-        return friendly;
+  const orderedWorkers = [...workers].sort((a, b) =>
+    minerDisplayName(a).localeCompare(
+      minerDisplayName(b),
+      undefined,
+      {
+        numeric: true,
+        sensitivity: 'base'
       }
+    )
+  );
 
-      return String(
-        a.workerName ||
-        a.worker ||
-        ''
-      ).localeCompare(
-        String(
-          b.workerName ||
-          b.worker ||
-          ''
-        ),
-        undefined,
-        {
-          numeric: true,
-          sensitivity: 'variant'
-        }
-      );
-    });
+  root.innerHTML = orderedWorkers.map((w) => {
+    const best = Number(w.bestDiff);
+    const net = Number(networkDiff);
 
-  root.innerHTML =
-    orderedWorkers.map((w) => {
-      const best =
-        Number(w.bestDiff);
+    const percent =
+      Number.isFinite(best) &&
+      Number.isFinite(net) &&
+      best > 0 &&
+      net > 0
+        ? (best / net) * 100
+        : null;
 
-      const net =
-        Number(networkDiff);
+    const percentText =
+      percent == null
+        ? '—'
+        : percent >= 0.01
+          ? percent.toFixed(2) + '%'
+          : percent.toPrecision(3) + '%';
 
-      const bestPercent =
-        Number.isFinite(best) &&
-        Number.isFinite(net) &&
-        best > 0 &&
-        net > 0
-          ? (best / net) * 100
-          : null;
+    return '' +
+      '<article class="miner">' +
 
-      const bestPercentLabel =
-        bestPercent == null
-          ? '—'
-          : bestPercent >= 0.01
-            ? bestPercent.toFixed(2) + '%'
-            : bestPercent.toPrecision(3) + '%';
-
-      return '' +
-        '<article class="miner">' +
-
-          '<div class="miner-head">' +
-            '<div>' +
-
-              '<div class="miner-name">' +
-                esc(
-                  minerDisplayName(w)
-                ) +
-              '</div>' +
-
-              '<div class="miner-sub">' +
-                esc(
-                  w.userAgent ||
-                  'unknown miner software'
-                ) +
-              '</div>' +
-
+        '<div class="miner-head">' +
+          '<div>' +
+            '<div class="miner-name">' +
+              esc(minerDisplayName(w)) +
             '</div>' +
+            '<div class="miner-sub">' +
+              esc(w.userAgent || 'unknown miner software') +
+            '</div>' +
+          '</div>' +
+          '<span class="pill pill--plain">up ' +
+            duration(w.connectedSeconds) +
+          '</span>' +
+        '</div>' +
 
-            '<span class="pill pill--plain">' +
-              'up ' +
-              duration(
-                w.connectedSeconds
-              ) +
+        '<div class="miner-grid">' +
+
+          '<div>' +
+            '<div class="label">Shares</div>' +
+            '<div class="miner-v">' +
+              num(w.shares) +
+            '</div>' +
+            '<div class="miner-vsub">accepted from this miner</div>' +
+          '</div>' +
+
+          '<div>' +
+            '<div class="label">Difficulty</div>' +
+            '<div class="miner-v" title="' +
+              esc(num(w.shareDifficulty)) +
+            '">' +
+              difficulty(w.shareDifficulty) +
+            '</div>' +
+            '<div class="miner-vsub">auto-tuned to this miner</div>' +
+          '</div>' +
+
+          '<div>' +
+            '<div class="label">Best share</div>' +
+            '<div class="miner-v" title="' +
+              esc(num(w.bestDiff)) +
+            '">' +
+              difficulty(w.bestDiff) +
+            '</div>' +
+            '<div class="miner-vsub">highest difficulty seen</div>' +
+          '</div>' +
+
+        '</div>' +
+
+        '<div class="odds">' +
+          '<div class="odds-head">' +
+            '<span class="label">Best share vs network</span>' +
+            '<span class="odds-v">' +
+              esc(percentText) +
             '</span>' +
-
           '</div>' +
+          '<p class="odds-note">' +
+            'Best share difficulty compared with current network difficulty.' +
+          '</p>' +
+        '</div>' +
 
-          '<div class="miner-grid">' +
-
-            '<div>' +
-              '<div class="label">Shares</div>' +
-              '<div class="miner-v">' +
-                num(w.shares) +
-              '</div>' +
-              '<div class="miner-vsub">' +
-                'accepted from this miner' +
-              '</div>' +
-            '</div>' +
-
-            '<div>' +
-              '<div class="label">Difficulty</div>' +
-              '<div class="miner-v" title="' +
-                esc(
-                  num(
-                    w.shareDifficulty
-                  )
-                ) +
-              '">' +
-                difficulty(
-                  w.shareDifficulty
-                ) +
-              '</div>' +
-              '<div class="miner-vsub">' +
-                'auto-tuned to this miner' +
-              '</div>' +
-            '</div>' +
-
-            '<div>' +
-              '<div class="label">Best share</div>' +
-              '<div class="miner-v" title="' +
-                esc(
-                  num(
-                    w.bestDiff
-                  )
-                ) +
-              '">' +
-                difficulty(
-                  w.bestDiff
-                ) +
-              '</div>' +
-              '<div class="miner-vsub">' +
-                'highest difficulty seen' +
-              '</div>' +
-            '</div>' +
-
-          '</div>' +
-
-          '<div class="odds">' +
-
-            '<div class="odds-head">' +
-
-              '<span class="label">' +
-                'Best share vs network' +
-              '</span>' +
-
-              '<span class="odds-v">' +
-                esc(
-                  bestPercentLabel
-                ) +
-              '</span>' +
-
-            '</div>' +
-
-            '<p class="odds-note">' +
-              'Best share difficulty compared with the current network difficulty.' +
-            '</p>' +
-
-          '</div>' +
-
-        '</article>';
-    }).join('');
+      '</article>';
+  }).join('');
 }
 function renderShares(shareLog) {
   $('share-rows').innerHTML =
-    shareLog &&
-    shareLog.length
+    shareLog && shareLog.length
       ? shareLog
           .slice(0, 5)
           .map((s) =>
             '<tr>' +
-
               '<td>' +
-                esc(
-                  minerDisplayName(s)
-                ) +
+                esc(minerDisplayName(s)) +
               '</td>' +
-
               '<td>' +
                 shareResultTag(s) +
               '</td>' +
-
               '<td class="n col-2" title="' +
-                esc(
-                  num(
-                    s.shareDiff
-                  )
-                ) +
+                esc(num(s.shareDiff)) +
               '">' +
-                difficulty(
-                  s.shareDiff
-                ) +
+                difficulty(s.shareDiff) +
               '</td>' +
-
               '<td class="n col-2" title="' +
-                esc(
-                  num(
-                    s.networkDiff
-                  )
-                ) +
+                esc(num(s.networkDiff)) +
               '">' +
-                difficulty(
-                  s.networkDiff
-                ) +
+                difficulty(s.networkDiff) +
               '</td>' +
-
               '<td class="time">' +
-                esc(
-                  when(s.at)
-                ) +
+                esc(when(s.at)) +
               '</td>' +
-
             '</tr>'
-          )
-          .join('')
-
-      : '<tr><td colspan="5" class="empty">' +
-        '<strong>No shares yet</strong>' +
-        'Shares show up here within seconds of a miner connecting.' +
-        '</td></tr>';
+          ).join('')
+      : '<tr><td colspan="5" class="empty"><strong>No shares yet</strong>' +
+        'Shares show up here within seconds of a miner connecting.</td></tr>';
 }
 function renderBlocks(blocks) {
   $('block-rows').innerHTML = blocks && blocks.length
@@ -1636,6 +1534,7 @@ async function tick() {
     return Number.isFinite(v) && v > acc ? v : acc;
   }, 0);
   $('best-share').textContent = best > 0 ? difficulty(best) : '—';
+  $('best-share').title = best > 0 ? num(best) : '';
   $('best-share').title = best > 0 ? num(best) : '';
   /* --- diagnostics --- */
   $('height').textContent = num(d.node.height);
