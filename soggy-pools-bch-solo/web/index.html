@@ -867,7 +867,7 @@
                 id="vardiff-max-diff"
                 name="vardiffMaxDiff"
                 type="number"
-                min="1"
+                min="0"
                 step="1"
                 inputmode="numeric"
               >
@@ -880,11 +880,7 @@
 
           <div class="tuning-policy">
             <strong>Automatic VarDiff:</strong>
-            targets approximately 30 seconds per share, evaluates every
-            120 seconds, uses a 50% tolerance band, and changes difficulty
-            by no more than 2&times; per adjustment. New connections receive
-            a 60-second grace period.
-          </div>
+            uses CKPool's native adaptive-difficulty algorithm. Min and Max clamp the allowed range; Start is assigned when a miner connects. Set Max Diff to 0 for no upper limit.</div>
 
           <div class="actions">
             <button class="btn btn--primary" id="save-settings" type="submit">Save changes</button>
@@ -1324,14 +1320,14 @@ async function saveSettings(ev) {
     if (
       minDiff < 1 ||
       startDiff < 1 ||
-      maxDiff < 1
+      maxDiff < 0
     ) {
       throw new Error(
         'Min, start, and max difficulty must be greater than zero.'
       );
     }
 
-    if (maxDiff < minDiff) {
+    if (maxDiff !== 0 && maxDiff < minDiff) {
       throw new Error(
         'Maximum difficulty must be greater than or equal to minimum difficulty.'
       );
@@ -1339,7 +1335,7 @@ async function saveSettings(ev) {
 
     if (
       startDiff < minDiff ||
-      startDiff > maxDiff
+      (maxDiff !== 0 && startDiff > maxDiff)
     ) {
       throw new Error(
         'Start difficulty must be between minimum and maximum difficulty.'

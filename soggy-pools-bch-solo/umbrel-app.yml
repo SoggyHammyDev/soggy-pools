@@ -4,7 +4,7 @@ category: bitcoin
 name: BCH Solo Pool
 
 icon: "https://raw.githubusercontent.com/SoggyHammyDev/soggy-pools/main/soggy-pools-bch-solo/icon.png?v=0193"
-version: "0.1.98"
+version: "0.1.99"
 tagline: Solo mine Bitcoin Cash with BCHN and CKPool
 description: >-
   A self-hosted Bitcoin Cash solo mining node for Umbrel. Runs Bitcoin Cash Node
@@ -25,7 +25,7 @@ defaultPassword: ""
 releaseNotes: >-
   Reworks SHA256 VarDiff into a SoggyPools-managed policy while keeping minimum,
   starting, and maximum share difficulty user configurable. VarDiff now targets
-  roughly 30 seconds per share, retargets every 120 seconds, uses a 50% tolerance
+  CKPool's native adaptive difficulty with configurable minimum, starting, and maximum difficulty
   band, limits each adjustment to 2x up or down, and gives new miners a 60-second
   grace period. The Settings page now exposes only Min Diff, Start Diff, and Max
   Diff with validation that Min <= Start <= Max.

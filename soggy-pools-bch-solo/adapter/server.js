@@ -31,15 +31,6 @@ const DEFAULTS = Object.freeze({
   vardiffMaxDiff: 2000000,
 });
 
-const VARDIFF_POLICY = Object.freeze({
-  enabled: true,
-  targetSec: 30,
-  retargetSec: 120,
-  tolerance: 0.50,
-  maxUpFactor: 2,
-  maxDownFactor: 2,
-  graceSec: 60,
-});
 
 let rpcId = 0;
 
@@ -304,6 +295,210 @@ function createdateMs(value, fallbackMs) {
   return sec * 1000 + Math.floor(ns / 1e6);
 }
 
+const SESSION_SHARE_FILE_CACHE = new Map();
+
+function sessionShareCounts(network, clientsRaw) {
+  const clientList =
+    Array.isArray(clientsRaw?.clients)
+      ? clientsRaw.clients
+      : [];
+
+  const starts = new Map();
+
+  for (const client of clientList) {
+    if (client?.authorised === false) continue;
+
+    const name = String(
+      client?.workername ||
+      client?.worker ||
+      ''
+    ).trim();
+
+    const start = number(
+      client?.starttime,
+      0
+    );
+
+    if (!name || start <= 0) continue;
+
+    const previous = starts.get(name);
+
+    if (!previous || start < previous) {
+      starts.set(name, start);
+    }
+  }
+
+  if (!starts.size) return {};
+
+  const root = path.join(
+    CKPOOL_LOG_ROOT,
+    network === 'testnet4'
+      ? 'testnet4'
+      : 'mainnet',
+    'logs'
+  );
+
+  const oldestStartMs =
+    Math.min(...starts.values()) * 1000;
+
+  const files = walkFiles(root)
+    .filter((p) => p.endsWith('.sharelog'))
+    .map((p) => {
+      try {
+        return {
+          p,
+          s: fs.statSync(p)
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .filter(
+      (file) =>
+        file.s.mtimeMs >=
+        oldestStartMs - 60000
+    );
+
+  const activeFiles =
+    new Set(files.map((file) => file.p));
+
+  for (
+    const cachedPath
+    of SESSION_SHARE_FILE_CACHE.keys()
+  ) {
+    if (!activeFiles.has(cachedPath)) {
+      SESSION_SHARE_FILE_CACHE.delete(
+        cachedPath
+      );
+    }
+  }
+
+  const counts = {};
+  const seen = new Set();
+
+  for (const file of files) {
+    let rows;
+
+    const cached =
+      SESSION_SHARE_FILE_CACHE.get(file.p);
+
+    if (
+      cached &&
+      cached.size === file.s.size &&
+      cached.mtimeMs === file.s.mtimeMs
+    ) {
+      rows = cached.rows;
+    } else {
+      rows = [];
+
+      let text;
+
+      try {
+        text = fs.readFileSync(
+          file.p,
+          'utf8'
+        );
+      } catch {
+        continue;
+      }
+
+      for (
+        const line
+        of text.split(/\r?\n/)
+      ) {
+        if (
+          !line.trim().startsWith('{')
+        ) {
+          continue;
+        }
+
+        try {
+          const raw = JSON.parse(line);
+
+          const name = String(
+            raw.workername ||
+            raw.username ||
+            ''
+          ).trim();
+
+          if (!name) continue;
+
+          const atMs = createdateMs(
+            raw.createdate,
+            file.s.mtimeMs
+          );
+
+          const shareDiff =
+            number(raw.sdiff, 0);
+
+          const assignedDiff =
+            number(raw.diff, 0);
+
+          const hash =
+            String(raw.hash || '').trim();
+
+          const rawCreated =
+            String(raw.createdate || '');
+
+          rows.push({
+            name,
+            atSec:
+              Math.floor(atMs / 1000),
+            accepted:
+              raw.result === true,
+            key:
+              hash ||
+              `${name}:${rawCreated}:${shareDiff}:${assignedDiff}`
+          });
+        } catch {}
+      }
+
+      SESSION_SHARE_FILE_CACHE.set(
+        file.p,
+        {
+          size: file.s.size,
+          mtimeMs: file.s.mtimeMs,
+          rows
+        }
+      );
+    }
+
+    for (const row of rows) {
+      const sessionStart =
+        starts.get(row.name);
+
+      if (
+        !sessionStart ||
+        row.atSec < sessionStart
+      ) {
+        continue;
+      }
+
+      if (seen.has(row.key)) {
+        continue;
+      }
+
+      seen.add(row.key);
+
+      if (!counts[row.name]) {
+        counts[row.name] = {
+          accepted: 0,
+          rejected: 0,
+          sessionStart
+        };
+      }
+
+      if (row.accepted) {
+        counts[row.name].accepted++;
+      } else {
+        counts[row.name].rejected++;
+      }
+    }
+  }
+
+  return counts;
+}
 function recentShareLog(network, currentNetworkDiff) {
   const root = path.join(CKPOOL_LOG_ROOT, network === 'testnet4' ? 'testnet4' : 'mainnet', 'logs');
   const files = walkFiles(root)
@@ -387,7 +582,7 @@ function recentBlocks(network = 'mainnet') {
   }).slice(0, 25);
 }
 
-function normalizeWorkers(workersRaw, clientsRaw, shareEntries) {
+function normalizeWorkers(workersRaw, clientsRaw, shareEntries, sessionCounts = {}) {
   const workerList = Array.isArray(workersRaw?.workers) ? workersRaw.workers : [];
   const clientList = Array.isArray(clientsRaw?.clients) ? clientsRaw.clients : [];
 
@@ -549,7 +744,15 @@ function normalizeWorkers(workersRaw, clientsRaw, shareEntries) {
       difficulty: diff,
 
       shares:
-        shareCounts.get(name) || 0,
+        sessionCounts[name]
+          ? Math.max(
+              0,
+              number(
+                sessionCounts[name].accepted,
+                0
+              )
+            )
+          : (shareCounts.get(name) || 0),
 
       bestDiff,
 
@@ -616,7 +819,16 @@ async function status() {
   ]);
 
   const shareData = recentShareLog(settings.network, difficulty);
-  const workers = normalizeWorkers(workersRaw, clientsRaw, shareData.entries);
+  const sessionCounts = sessionShareCounts(
+    settings.network,
+    clientsRaw
+  );
+  const workers = normalizeWorkers(
+    workersRaw,
+    clientsRaw,
+    shareData.entries,
+    sessionCounts
+  );
   const accepted = number(poolstats?.shares, shareData.entries.filter((s) => s.result === 'accepted').length);
   const rejected = shareData.entries.filter((s) => s.result === 'rejected').length;
   const uptimeSeconds = number(uptimeRaw?.uptime, poolstats?.start ? Math.max(0, Math.floor(Date.now() / 1000) - number(poolstats.start)) : 0);
@@ -791,7 +1003,7 @@ function cleanSettings(body) {
 
   integer(
     'vardiffMaxDiff',
-    1,
+    0,
     100000000000
   );
 
@@ -802,22 +1014,23 @@ function cleanSettings(body) {
   );
 
   if (
-    out.vardiffMaxDiff <
-    out.vardiffMinDiff
+    out.vardiffMaxDiff !== 0 &&
+    out.vardiffMaxDiff < out.vardiffMinDiff
   ) {
     throw new Error(
-      'Maximum difficulty must be greater than or equal to minimum difficulty.'
+      'Maximum difficulty must be 0 for unlimited, or greater than or equal to minimum difficulty.'
     );
   }
 
   if (
-    out.startDiff <
-      out.vardiffMinDiff ||
-    out.startDiff >
-      out.vardiffMaxDiff
+    out.startDiff < out.vardiffMinDiff ||
+    (
+      out.vardiffMaxDiff !== 0 &&
+      out.startDiff > out.vardiffMaxDiff
+    )
   ) {
     throw new Error(
-      'Start difficulty must be between minimum and maximum difficulty.'
+      'Start difficulty must be at least minimum difficulty and must not exceed maximum difficulty unless maximum is 0.'
     );
   }
 
@@ -843,7 +1056,7 @@ http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { ok: true });
-    if (req.method === 'GET' && url.pathname === '/api/settings') return json(res, 200, { settings: readSettings(), vardiffPolicy: VARDIFF_POLICY, coinbaseSig: COINBASE_SIG });
+    if (req.method === 'GET' && url.pathname === '/api/settings') return json(res, 200, { settings: readSettings(), coinbaseSig: COINBASE_SIG });
     if (req.method === 'GET' && url.pathname === '/api/status') return json(res, 200, await status());
     if (req.method === 'POST' && url.pathname === '/api/settings') {
       const body = JSON.parse(await readBody(req) || '{}');

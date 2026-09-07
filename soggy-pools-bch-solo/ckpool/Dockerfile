@@ -11,13 +11,11 @@ ARG CKPOOL_REPO=https://github.com/skaisser/ckpool.git
 # our source patch or change mining behaviour between Soggy Pools releases.
 ARG CKPOOL_REF=11692101556501f5d242a83f356d389c086be313
 
-COPY apply-soggypools-vardiff.py /tmp/apply-soggypools-vardiff.py
 COPY apply-soggypools-test4.py /tmp/apply-soggypools-test4.py
 
 RUN git clone "$CKPOOL_REPO" /src/ckpool
 WORKDIR /src/ckpool
 RUN git checkout "$CKPOOL_REF"
-RUN python3 /tmp/apply-soggypools-vardiff.py
 RUN python3 /tmp/apply-soggypools-test4.py
 RUN ./autogen.sh
 RUN ./configure

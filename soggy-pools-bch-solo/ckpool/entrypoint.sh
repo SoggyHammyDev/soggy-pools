@@ -124,13 +124,6 @@ vardiff_max="$(jq -r '.vardiffMaxDiff // .maxDiff // 2000000' "$SETTINGS_FILE")"
 
 # SoggyPools SHA256 VarDiff policy.
 # Intentionally server-controlled rather than user configurable.
-vardiff_enabled=true
-vardiff_target=30
-vardiff_retarget=120
-vardiff_tolerance=0.50
-vardiff_up=2
-vardiff_down=2
-vardiff_grace=60
 
 COINBASE_SIG="SoggyPools On Umbrel"
 
@@ -143,15 +136,8 @@ jq -n \
   --arg sig "$COINBASE_SIG" \
   --arg logdir "$LOGDIR" \
   --argjson start "$start_diff" \
-  --argjson vardiff_enabled "$vardiff_enabled" \
-  --argjson vardiff_target "$vardiff_target" \
-  --argjson vardiff_retarget "$vardiff_retarget" \
-  --argjson vardiff_tolerance "$vardiff_tolerance" \
   --argjson vardiff_min "$vardiff_min" \
   --argjson vardiff_max "$vardiff_max" \
-  --argjson vardiff_up "$vardiff_up" \
-  --argjson vardiff_down "$vardiff_down" \
-  --argjson vardiff_grace "$vardiff_grace" \
   '{
     btcd: [{url:$rpc, auth:$user, pass:$pass, notify:true, zmqnotify:$zmq}],
     bchaddress:$payout,
@@ -165,14 +151,7 @@ jq -n \
     serverurl:["0.0.0.0:3333"],
     mindiff:$vardiff_min,
     startdiff:$start,
-    maxdiff:$vardiff_max,
-    vardiff_enabled:$vardiff_enabled,
-    vardiff_target_sec:$vardiff_target,
-    vardiff_retarget_sec:$vardiff_retarget,
-    vardiff_tolerance:$vardiff_tolerance,
-    vardiff_max_up_factor:$vardiff_up,
-    vardiff_max_down_factor:$vardiff_down,
-    vardiff_grace_sec:$vardiff_grace
+    maxdiff:$vardiff_max
   }' > "$CONFIG"
 
 # Jansson/CKPool distinguishes integer from real JSON values. jq serializes
@@ -188,7 +167,7 @@ echo "[bch-solo] Starting BCH CKPool in solo mode on :3333"
 echo "[bch-solo] Network: $network (BCHN chain=$actual_chain)"
 echo "[bch-solo] Coinbase signature: $COINBASE_SIG"
 echo "[bch-solo] Fallback payout address: $payout"
-echo "[bch-solo] VarDiff policy: min=$vardiff_min start=$start_diff max=$vardiff_max target=${vardiff_target}s retarget=${vardiff_retarget}s tolerance=50% max-step=2x grace=${vardiff_grace}s"
+echo "[bch-solo] Native CKPool VarDiff: min=$vardiff_min start=$start_diff max=$vardiff_max (max=0 means unlimited)"
 if [ "$ckpool_payout" != "$payout" ]; then
   echo "[bch-solo] CKPool-compatible payout address: $ckpool_payout"
 fi
