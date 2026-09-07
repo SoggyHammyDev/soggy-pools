@@ -35,7 +35,7 @@ services:
       - ckpool
 
   ckpool:
-    image: ghcr.io/soggyhammydev/bch-solo-ckpool:0.1.94
+    image: ghcr.io/soggyhammydev/bch-solo-ckpool:0.1.95
     restart: on-failure
     stop_grace_period: 10s
     environment:
