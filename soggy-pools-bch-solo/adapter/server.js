@@ -13,6 +13,9 @@ const RPC_USER = process.env.BCH_RPC_USER || 'umbrel-bch';
 const RPC_PASSWORD = process.env.BCH_RPC_PASSWORD || '';
 const STRATUM_PORT = Number(process.env.STRATUM_PORT || 3334);
 const SETTINGS_FILE = process.env.SETTINGS_FILE || '/data/settings.json';
+const WORKER_RECORDS_FILE =
+  process.env.WORKER_RECORDS_FILE ||
+  path.join(path.dirname(SETTINGS_FILE), 'worker-records.json');
 const CKPOOL_HOST = process.env.CKPOOL_HOST || 'ckpool';
 const CKPOOL_PORT = Number(process.env.CKPOOL_PORT || 3333);
 const CKPOOL_LOG_ROOT = process.env.CKPOOL_LOG_ROOT || '/var/lib/ckpool';
@@ -72,6 +75,67 @@ function atomicWriteSettings(value) {
   fs.renameSync(tmp, SETTINGS_FILE);
 }
 
+function emptyWorkerRecords() {
+  return {
+    version: 1,
+    networks: {}
+  };
+}
+
+function readWorkerRecords() {
+  try {
+    const raw = JSON.parse(
+      fs.readFileSync(
+        WORKER_RECORDS_FILE,
+        'utf8'
+      )
+    );
+
+    if (
+      !raw ||
+      typeof raw !== 'object'
+    ) {
+      return emptyWorkerRecords();
+    }
+
+    if (
+      !raw.networks ||
+      typeof raw.networks !== 'object'
+    ) {
+      raw.networks = {};
+    }
+
+    raw.version = 1;
+
+    return raw;
+  } catch {
+    return emptyWorkerRecords();
+  }
+}
+
+function atomicWriteWorkerRecords(value) {
+  fs.mkdirSync(
+    path.dirname(WORKER_RECORDS_FILE),
+    { recursive: true }
+  );
+
+  const tmp =
+    `${WORKER_RECORDS_FILE}.tmp`;
+
+  fs.writeFileSync(
+    tmp,
+    JSON.stringify(
+      value,
+      null,
+      2
+    ) + '\n'
+  );
+
+  fs.renameSync(
+    tmp,
+    WORKER_RECORDS_FILE
+  );
+}
 function json(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
   res.writeHead(status, {
@@ -295,6 +359,292 @@ function createdateMs(value, fallbackMs) {
   return sec * 1000 + Math.floor(ns / 1e6);
 }
 
+function updateBestCandidate(
+  candidates,
+  name,
+  bestDiff
+) {
+  const worker =
+    String(name || '').trim();
+
+  const diff =
+    number(bestDiff, 0);
+
+  if (
+    !worker ||
+    !Number.isFinite(diff) ||
+    diff <= 0
+  ) {
+    return;
+  }
+
+  const previous =
+    number(candidates.get(worker), 0);
+
+  if (diff > previous) {
+    candidates.set(worker, diff);
+  }
+}
+
+function currentBestCandidates(
+  workersRaw,
+  clientsRaw,
+  shareEntries
+) {
+  const candidates = new Map();
+
+  const workerList =
+    Array.isArray(workersRaw?.workers)
+      ? workersRaw.workers
+      : [];
+
+  const clientList =
+    Array.isArray(clientsRaw?.clients)
+      ? clientsRaw.clients
+      : [];
+
+  for (const worker of workerList) {
+    updateBestCandidate(
+      candidates,
+      worker?.worker ||
+        worker?.workername,
+      worker?.bestdiff
+    );
+  }
+
+  for (const client of clientList) {
+    updateBestCandidate(
+      candidates,
+      client?.workername ||
+        client?.worker,
+      client?.bestdiff
+    );
+  }
+
+  for (const share of shareEntries) {
+    if (
+      share?.result !== 'accepted'
+    ) {
+      continue;
+    }
+
+    updateBestCandidate(
+      candidates,
+      share?.workerName ||
+        share?.worker,
+      share?.shareDiff
+    );
+  }
+
+  return candidates;
+}
+
+function persistentWorkerBests(
+  network,
+  workersRaw,
+  clientsRaw,
+  shareEntries
+) {
+  const safe =
+    network === 'testnet4'
+      ? 'testnet4'
+      : 'mainnet';
+
+  const state =
+    readWorkerRecords();
+
+  if (
+    !state.networks[safe] ||
+    typeof state.networks[safe] !== 'object'
+  ) {
+    state.networks[safe] = {
+      historyWatermarkMs: 0,
+      workers: {}
+    };
+  }
+
+  const networkState =
+    state.networks[safe];
+
+  if (
+    !networkState.workers ||
+    typeof networkState.workers !== 'object'
+  ) {
+    networkState.workers = {};
+  }
+
+  let changed = false;
+
+  const candidates =
+    currentBestCandidates(
+      workersRaw,
+      clientsRaw,
+      shareEntries
+    );
+
+  const root = path.join(
+    CKPOOL_LOG_ROOT,
+    safe,
+    'logs'
+  );
+
+  const oldWatermark =
+    Math.max(
+      0,
+      number(
+        networkState.historyWatermarkMs,
+        0
+      )
+    );
+
+  const allFiles = walkFiles(root)
+    .filter(
+      (p) => p.endsWith('.sharelog')
+    )
+    .map((p) => {
+      try {
+        return {
+          p,
+          s: fs.statSync(p)
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  /*
+   * On the first run, recover Best Diff from the entire
+   * existing sharelog history.
+   *
+   * Once a successful history scan has been persisted,
+   * only files at/after the mtime watermark need to be
+   * reconsidered. The 1-second overlap protects filesystems
+   * with coarse timestamp resolution.
+   */
+  const files =
+    oldWatermark > 0
+      ? allFiles.filter(
+          (file) =>
+            file.s.mtimeMs >=
+            oldWatermark - 1000
+        )
+      : allFiles;
+
+  let newestScannedMtime =
+    oldWatermark;
+
+  let scanFailed = false;
+
+  for (const file of files) {
+    let text;
+
+    try {
+      text = fs.readFileSync(
+        file.p,
+        'utf8'
+      );
+    } catch {
+      scanFailed = true;
+      continue;
+    }
+
+    for (
+      const line
+      of text.split(/\r?\n/)
+    ) {
+      if (
+        !line.trim().startsWith('{')
+      ) {
+        continue;
+      }
+
+      try {
+        const raw =
+          JSON.parse(line);
+
+        if (raw.result !== true) {
+          continue;
+        }
+
+        updateBestCandidate(
+          candidates,
+          raw.workername ||
+            raw.username,
+          raw.sdiff
+        );
+      } catch {}
+    }
+
+    newestScannedMtime =
+      Math.max(
+        newestScannedMtime,
+        file.s.mtimeMs
+      );
+  }
+
+  for (
+    const [name, bestDiff]
+    of candidates.entries()
+  ) {
+    const previous =
+      number(
+        networkState.workers[name]
+          ?.bestDiff,
+        0
+      );
+
+    if (bestDiff <= previous) {
+      continue;
+    }
+
+    networkState.workers[name] = {
+      bestDiff,
+      updatedAt:
+        new Date().toISOString()
+    };
+
+    changed = true;
+  }
+
+  /*
+   * Only advance the history watermark when every selected
+   * sharelog could be read successfully. A temporary read
+   * problem therefore cannot cause history to be skipped.
+   */
+  if (
+    !scanFailed &&
+    newestScannedMtime >
+      oldWatermark
+  ) {
+    networkState.historyWatermarkMs =
+      newestScannedMtime;
+
+    changed = true;
+  }
+
+  if (changed) {
+    atomicWriteWorkerRecords(state);
+  }
+
+  const out = {};
+
+  for (
+    const [name, record]
+    of Object.entries(
+      networkState.workers
+    )
+  ) {
+    const best =
+      number(record?.bestDiff, 0);
+
+    if (best > 0) {
+      out[name] = best;
+    }
+  }
+
+  return out;
+}
 const SESSION_SHARE_FILE_CACHE = new Map();
 
 function sessionShareCounts(network, clientsRaw) {
@@ -582,7 +932,7 @@ function recentBlocks(network = 'mainnet') {
   }).slice(0, 25);
 }
 
-function normalizeWorkers(workersRaw, clientsRaw, shareEntries, sessionCounts = {}) {
+function normalizeWorkers(workersRaw, clientsRaw, shareEntries, sessionCounts = {}, persistentBests = {}) {
   const workerList = Array.isArray(workersRaw?.workers) ? workersRaw.workers : [];
   const clientList = Array.isArray(clientsRaw?.clients) ? clientsRaw.clients : [];
 
@@ -683,6 +1033,7 @@ function normalizeWorkers(workersRaw, clientsRaw, shareEntries, sessionCounts = 
       number(w.bestdiff, 0),
       ...clients.map((c) => number(c.bestdiff, 0)),
       bestShare.get(name) || 0,
+      number(persistentBests[name], 0),
       0
     );
 
@@ -819,15 +1170,25 @@ async function status() {
   ]);
 
   const shareData = recentShareLog(settings.network, difficulty);
+
   const sessionCounts = sessionShareCounts(
     settings.network,
     clientsRaw
   );
+
+  const persistentBests = persistentWorkerBests(
+    settings.network,
+    workersRaw,
+    clientsRaw,
+    shareData.entries
+  );
+
   const workers = normalizeWorkers(
     workersRaw,
     clientsRaw,
     shareData.entries,
-    sessionCounts
+    sessionCounts,
+    persistentBests
   );
   const accepted = number(poolstats?.shares, shareData.entries.filter((s) => s.result === 'accepted').length);
   const rejected = shareData.entries.filter((s) => s.result === 'rejected').length;
