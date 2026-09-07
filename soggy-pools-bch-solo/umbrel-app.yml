@@ -1,0 +1,31 @@
+manifestVersion: 1
+id: soggy-pools-bch-solo
+category: bitcoin
+name: BCH Solo Pool
+version: "0.1.8"
+tagline: Solo mine Bitcoin Cash with BCHN and CKPool
+description: >-
+  A self-hosted Bitcoin Cash solo mining node for Umbrel. Runs Bitcoin Cash Node
+  (BCHN), a BCH-focused CKPool fork, and a local dashboard for node sync, peers,
+  workers, shares, hashrate, difficulty, payout settings, and block history.
+  Mining is non-custodial: block rewards are generated directly to the configured
+  BCH address (or to a miner-provided BCH address when solo username payout is used).
+developer: SoggyHammyDev
+website: https://github.com/SoggyHammyDev/soggy-pools
+dependencies: []
+repo: https://github.com/SoggyHammyDev/soggy-pools
+support: https://github.com/SoggyHammyDev/soggy-pools/issues
+port: 3280
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+releaseNotes: >-
+  Carries forward the working Testnet4 runtime fixes: clears stale CKPool PID/socket
+  state, explicitly wires BCHN RPC/ZMQ ports, waits for BCHN RPC and a valid block
+  template, forces poolfee to JSON real 0.0, converts configured bchtest CashAddr
+  fallback payouts to legacy testnet form for CKPool compatibility, and patches the
+  BCH fork so BCHN chain name test4 is treated as bchtest. Keeps the ZEC-style
+  Overview / Miners / Blocks / Settings dashboard, Testnet4, prune target, VarDiff
+  controls, automatic GHCR publishing, and the SoggyPools On Umbrel coinbase tag.
+submitter: SoggyHammyDev

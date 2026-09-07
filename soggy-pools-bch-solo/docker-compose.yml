@@ -1,0 +1,74 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: soggy-pools-bch-solo_web_1
+      APP_PORT: 8080
+
+  web:
+    image: ghcr.io/soggyhammydev/bch-solo-web:0.1.8
+    restart: on-failure
+    stop_grace_period: 30s
+    depends_on:
+      - adapter
+
+  adapter:
+    image: ghcr.io/soggyhammydev/bch-solo-adapter:0.1.8
+    restart: on-failure
+    stop_grace_period: 30s
+    environment:
+      PORT: "8081"
+      BCH_RPC_HOST: bchn
+      BCH_RPC_PORT: "8332"
+      BCH_RPC_USER: umbrel-bch
+      BCH_RPC_PASSWORD: "${APP_SEED}"
+      STRATUM_PORT: "3334"
+      SETTINGS_FILE: /data/settings.json
+      CKPMSG_SOCKET: /tmp/ckpool/stratifier
+      CKPOOL_HOST: ckpool
+      CKPOOL_PORT: "3333"
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+      - ckpool-runtime:/tmp/ckpool
+      - ${APP_DATA_DIR}/ckpool:/var/lib/ckpool:ro
+    depends_on:
+      - bchn
+      - ckpool
+
+  ckpool:
+    image: ghcr.io/soggyhammydev/bch-solo-ckpool:0.1.8
+    restart: on-failure
+    stop_grace_period: 1m
+    environment:
+      BCH_RPC_HOST: bchn
+      BCH_RPC_PORT: "8332"
+      BCH_RPC_USER: umbrel-bch
+      BCH_RPC_PASSWORD: "${APP_SEED}"
+      BCH_ZMQ_PORT: "29000"
+      SETTINGS_FILE: /data/settings.json
+    ports:
+      - "3334:3333"
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+      - ${APP_DATA_DIR}/ckpool:/var/lib/ckpool
+      - ckpool-runtime:/tmp/ckpool
+    depends_on:
+      - bchn
+
+  bchn:
+    image: ghcr.io/soggyhammydev/bch-solo-bchn:0.1.8
+    restart: on-failure
+    stop_grace_period: 2m
+    environment:
+      BCH_RPC_USER: umbrel-bch
+      BCH_RPC_PASSWORD: "${APP_SEED}"
+      BCH_RPC_PORT: "8332"
+      BCH_ZMQ_PORT: "29000"
+      SETTINGS_FILE: /settings/settings.json
+    volumes:
+      - ${APP_DATA_DIR}/bchn:/data
+      - ${APP_DATA_DIR}/data:/settings:ro
+
+volumes:
+  ckpool-runtime:
