@@ -1,0 +1,72 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: soggy-pools-xec-solo_web_1
+      APP_PORT: 8080
+
+  web:
+    image: ghcr.io/soggyhammydev/xec-solo-web:0.1.0
+    restart: on-failure
+    stop_grace_period: 30s
+    depends_on:
+      - adapter
+
+  adapter:
+    image: ghcr.io/soggyhammydev/xec-solo-adapter:0.1.0
+    restart: on-failure
+    stop_grace_period: 30s
+    environment:
+      PORT: "8081"
+      XEC_RPC_HOST: xec-node
+      XEC_RPC_PORT: "8332"
+      XEC_RPC_USER: umbrel-xec
+      XEC_RPC_PASSWORD: "${APP_SEED}"
+      STRATUM_PORT: "3335"
+      SETTINGS_FILE: /data/settings.json
+      CKPOOL_HOST: ckpool
+      CKPOOL_PORT: "3333"
+      CKPOOL_LOG_ROOT: /var/lib/ckpool/logs
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+      - ckpool-runtime:/tmp/ckpool
+      - ${APP_DATA_DIR}/ckpool:/var/lib/ckpool:ro
+    depends_on:
+      - xec-node
+      - ckpool
+
+  ckpool:
+    image: ghcr.io/soggyhammydev/xec-solo-ckpool:0.1.0
+    restart: on-failure
+    stop_grace_period: 1m
+    environment:
+      XEC_RPC_HOST: xec-node
+      XEC_RPC_PORT: "8332"
+      XEC_RPC_USER: umbrel-xec
+      XEC_RPC_PASSWORD: "${APP_SEED}"
+      SETTINGS_FILE: /data/settings.json
+    ports:
+      - "3335:3333"
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+      - ${APP_DATA_DIR}/ckpool:/var/lib/ckpool
+      - ckpool-runtime:/tmp/ckpool
+    depends_on:
+      - xec-node
+
+  xec-node:
+    image: ghcr.io/soggyhammydev/xec-solo-node:0.1.0
+    restart: on-failure
+    stop_grace_period: 2m
+    environment:
+      XEC_RPC_USER: umbrel-xec
+      XEC_RPC_PASSWORD: "${APP_SEED}"
+      XEC_RPC_PORT: "8332"
+      SETTINGS_FILE: /settings/settings.json
+    volumes:
+      - ${APP_DATA_DIR}/node:/data
+      - ${APP_DATA_DIR}/data:/settings:ro
+
+volumes:
+  ckpool-runtime:

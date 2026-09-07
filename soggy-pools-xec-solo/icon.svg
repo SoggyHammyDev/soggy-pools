@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">XEC Solo Pool</title>
+  <desc id="desc">Blue eCash-inspired XEC coin icon</desc>
+  <rect width="256" height="256" fill="#0a0f16"/>
+  <circle cx="128" cy="128" r="84" fill="#111823" stroke="#19a0ff" stroke-width="8"/>
+  <path d="M79 84h29l20 30 20-30h29l-35 47 37 51h-30l-22-32-22 32H76l37-51z" fill="#e6edf6"/>
+  <path d="M60 62h136M60 194h136" stroke="#19a0ff" stroke-width="7" stroke-linecap="round" opacity=".9"/>
+</svg>

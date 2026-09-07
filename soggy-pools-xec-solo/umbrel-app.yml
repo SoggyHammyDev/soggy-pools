@@ -1,0 +1,31 @@
+manifestVersion: 1
+id: soggy-pools-xec-solo
+category: bitcoin
+name: XEC Solo Pool
+version: "0.1.0"
+tagline: Solo mine eCash with Bitcoin ABC and CKPool
+description: >-
+  A self-hosted eCash (XEC) SHA-256 solo mining pool for Umbrel. Runs Bitcoin ABC,
+  Bitcoin ABC's eCash-aware CKPool fork, and a local ZEC-style dashboard for node
+  sync, peers, miners, shares, effective Heartbeat/RTT difficulty, payout settings,
+  pruning, and block history. The pool uses a fixed ecash: payout address, accepts
+  friendly worker names, charges a 0% pool fee, and keeps Bitcoin ABC RPC private
+  inside the app network.
+developer: SoggyHammyDev
+website: https://github.com/SoggyHammyDev/soggy-pools
+dependencies: []
+repo: https://github.com/SoggyHammyDev/soggy-pools
+support: https://github.com/SoggyHammyDev/soggy-pools/issues
+port: 3281
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+releaseNotes: >-
+  Initial XEC release. Adds Bitcoin ABC 0.33.11, configurable pruned/archive node
+  storage with a 5,000 MiB default prune target, Bitcoin ABC's ecash-ckpool-solo in
+  -x mode, fixed-address 0% fee solo mining, native CKPool VarDiff min/start/max
+  controls, ZEC-style Overview / Miners / Blocks / Settings UI, and mining-readiness
+  gating for miner-fund, Avalanche staking-reward, and Heartbeat/RTT template data.
+  Stratum is exposed on host port 3335 and the coinbase tag is SoggyPools On Umbrel.
+submitter: SoggyHammyDev
