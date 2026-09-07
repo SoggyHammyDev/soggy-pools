@@ -1,9 +1,10 @@
 manifestVersion: 1
 id: soggy-pools-bch-solo
 category: bitcoin
-name: BCH Solo Pool
+name: BCH Solo Pool
+
 icon: icon.png
-version: "0.1.9"
+version: "0.1.91"
 tagline: Solo mine Bitcoin Cash with BCHN and CKPool
 description: >-
   A self-hosted Bitcoin Cash solo mining node for Umbrel. Runs Bitcoin Cash Node
