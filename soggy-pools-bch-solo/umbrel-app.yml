@@ -4,7 +4,7 @@ category: bitcoin
 name: BCH Solo Pool
 
 icon: icon.png
-version: "0.1.91"
+version: "0.1.92"
 tagline: Solo mine Bitcoin Cash with BCHN and CKPool
 description: >-
   A self-hosted Bitcoin Cash solo mining node for Umbrel. Runs Bitcoin Cash Node
