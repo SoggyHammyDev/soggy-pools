@@ -425,7 +425,7 @@ async function status() {
   let chain = null;
   let nodeError = null;
   try {
-    chain = await rpc('getblockchaininfo');
+    chain = await rpc('getblockchaininfo', [], 15000).catch(() => rpc('getblockchaininfo', [], 15000));
   } catch (e) {
     nodeError = e.message;
   }
