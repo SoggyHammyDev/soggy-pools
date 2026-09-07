@@ -655,3 +655,10 @@ http.createServer(async (req, res) => {
     return json(res, 400, { error: e.message || String(e) });
   }
 }).listen(PORT, '0.0.0.0', () => console.log(`XEC Solo adapter listening on :${PORT}`));
+// SOGGY_FAST_SHUTDOWN
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.once(signal, () => {
+    console.log(`[shutdown] ${signal} received; stopping XEC adapter`);
+    process.exit(0);
+  });
+}

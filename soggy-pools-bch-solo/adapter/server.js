@@ -228,7 +228,7 @@ function stratumProbe() {
     socket.setEncoding('utf8');
     socket.once('connect', () => {
       connected = true;
-      socket.write(JSON.stringify({ id: 1, method: 'mining.subscribe', params: ['SoggyPools-Dashboard/0.1.93'] }) + '\n');
+      socket.write(JSON.stringify({ id: 1, method: 'mining.subscribe', params: ['SoggyPools-Dashboard/0.1.94'] }) + '\n');
     });
     socket.on('data', (chunk) => {
       data += chunk;
@@ -615,3 +615,10 @@ http.createServer(async (req, res) => {
     return json(res, 400, { error: e.message || String(e) });
   }
 }).listen(PORT, '0.0.0.0', () => console.log(`BCH Solo adapter listening on :${PORT}`));
+// SOGGY_FAST_SHUTDOWN
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.once(signal, () => {
+    console.log(`[shutdown] ${signal} received; stopping BCH adapter`);
+    process.exit(0);
+  });
+}
