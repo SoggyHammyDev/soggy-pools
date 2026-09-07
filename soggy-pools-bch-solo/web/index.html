@@ -479,7 +479,50 @@
 
   /* ---- settings form ---------------------------------------------------- */
 
-  .form { display: grid; gap: 16px; max-width: 460px; }
+  .form { display: grid; gap: 16px; max-width: 100%; }
+
+  .tuning-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .tuning-card {
+    display: grid;
+    gap: 8px;
+    padding: 13px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    min-width: 0;
+  }
+
+  .tuning-card label {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .tuning-card .hint {
+    line-height: 1.45;
+  }
+
+  .tuning-policy {
+    padding: 12px 13px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .tuning-policy strong {
+    color: var(--text);
+    font-weight: 600;
+  }
   .field { display: grid; gap: 6px; }
   .field label { font-size: 13px; font-weight: 550; }
   .field .hint { color: var(--dim); font-size: 12px; }
@@ -538,6 +581,7 @@
     .diag-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 620px) {
+    .tuning-grid { grid-template-columns: 1fr; }
     body { padding: 14px 12px 40px; }
     .status { padding: 16px; }
     .tab { padding: 11px 9px; font-size: 13px; }
@@ -778,54 +822,70 @@
             <span class="hint">Approximate disk target for BCH chain data. Disabled in Archive mode.</span>
           </div>
           <div class="section-head" style="margin-top:10px;">
-            <h2 style="margin:0;font-size:18px;">Pool tuning</h2>
-            <p>These values are written to the pool config file and apply on next restart.</p>
+            <h2 style="margin:0;font-size:18px;">Pool difficulty</h2>
+            <p>
+              Choose the allowed difficulty range. SoggyPools automatically
+              manages VarDiff timing and retarget behavior.
+            </p>
           </div>
-          <div class="field">
-            <label for="start-diff-input">Start difficulty</label>
-            <input id="start-diff-input" name="startDiff" type="number" min="1" step="1" inputmode="numeric">
-            <span class="hint">Initial share difficulty given to a newly connected miner.</span>
+
+          <div class="tuning-grid">
+
+            <div class="tuning-card field">
+              <label for="vardiff-min-diff">Min diff</label>
+              <input
+                id="vardiff-min-diff"
+                name="vardiffMinDiff"
+                type="number"
+                min="1"
+                step="1"
+                inputmode="numeric"
+              >
+              <span class="hint">
+                Lowest difficulty VarDiff will assign after miners are connected.
+              </span>
+            </div>
+
+            <div class="tuning-card field">
+              <label for="start-diff-input">Start diff</label>
+              <input
+                id="start-diff-input"
+                name="startDiff"
+                type="number"
+                min="1"
+                step="1"
+                inputmode="numeric"
+              >
+              <span class="hint">
+                Initial share difficulty sent to a miner before VarDiff settles.
+              </span>
+            </div>
+
+            <div class="tuning-card field">
+              <label for="vardiff-max-diff">Max diff</label>
+              <input
+                id="vardiff-max-diff"
+                name="vardiffMaxDiff"
+                type="number"
+                min="1"
+                step="1"
+                inputmode="numeric"
+              >
+              <span class="hint">
+                Highest difficulty VarDiff is allowed to assign.
+              </span>
+            </div>
+
           </div>
-          <div class="field">
-            <label for="vardiff-enabled">VarDiff enabled</label>
-            <select id="vardiff-enabled" name="vardiffEnabled">
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
+
+          <div class="tuning-policy">
+            <strong>Automatic VarDiff:</strong>
+            targets approximately 30 seconds per share, evaluates every
+            120 seconds, uses a 50% tolerance band, and changes difficulty
+            by no more than 2&times; per adjustment. New connections receive
+            a 60-second grace period.
           </div>
-          <div class="field">
-            <label for="vardiff-target-sec">VarDiff target seconds</label>
-            <input id="vardiff-target-sec" name="vardiffTargetSec" type="number" min="1" step="1" inputmode="numeric">
-          </div>
-          <div class="field">
-            <label for="vardiff-retarget-sec">VarDiff retarget seconds</label>
-            <input id="vardiff-retarget-sec" name="vardiffRetargetSec" type="number" min="1" step="1" inputmode="numeric">
-          </div>
-          <div class="field">
-            <label for="vardiff-tolerance">VarDiff tolerance</label>
-            <input id="vardiff-tolerance" name="vardiffTolerance" type="number" min="0" max="1" step="0.01" inputmode="decimal">
-            <span class="hint">Fractional tolerance around the target share interval, typically between 0 and 1.</span>
-          </div>
-          <div class="field">
-            <label for="vardiff-min-diff">VarDiff minimum difficulty</label>
-            <input id="vardiff-min-diff" name="vardiffMinDiff" type="number" min="1" step="1" inputmode="numeric">
-          </div>
-          <div class="field">
-            <label for="vardiff-max-diff">VarDiff maximum difficulty</label>
-            <input id="vardiff-max-diff" name="vardiffMaxDiff" type="number" min="1" step="1" inputmode="numeric">
-          </div>
-          <div class="field">
-            <label for="vardiff-max-up-factor">VarDiff max up factor</label>
-            <input id="vardiff-max-up-factor" name="vardiffMaxUpFactor" type="number" min="1" step="1" inputmode="numeric">
-          </div>
-          <div class="field">
-            <label for="vardiff-max-down-factor">VarDiff max down factor</label>
-            <input id="vardiff-max-down-factor" name="vardiffMaxDownFactor" type="number" min="1" step="1" inputmode="numeric">
-          </div>
-          <div class="field">
-            <label for="vardiff-grace-sec">VarDiff grace seconds</label>
-            <input id="vardiff-grace-sec" name="vardiffGraceSec" type="number" min="0" step="1" inputmode="numeric">
-          </div>
+
           <div class="actions">
             <button class="btn btn--primary" id="save-settings" type="submit">Save changes</button>
             <div class="status-msg" id="settings-msg" role="status" aria-live="polite"></div>

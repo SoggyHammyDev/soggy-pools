@@ -23,16 +23,9 @@ if [ ! -f "$SETTINGS_FILE" ]; then
   "payoutAddress": "",
   "storageMode": "pruned",
   "pruneTargetMb": 10240,
-  "startDiff": 500,
-  "vardiffEnabled": true,
-  "vardiffTargetSec": 10,
-  "vardiffRetargetSec": 30,
-  "vardiffTolerance": 0.30,
-  "vardiffMinDiff": 1,
-  "vardiffMaxDiff": 1000000000,
-  "vardiffMaxUpFactor": 8,
-  "vardiffMaxDownFactor": 4,
-  "vardiffGraceSec": 15
+  "startDiff": 10000,
+  "vardiffMinDiff": 1000,
+  "vardiffMaxDiff": 2000000
 }
 JSON
 fi
@@ -125,16 +118,19 @@ case "$network:$payout" in
     ;;
 esac
 
-start_diff="$(jq -r '.startDiff // 500' "$SETTINGS_FILE")"
-vardiff_enabled="$(jq -r 'if .vardiffEnabled == null then true else .vardiffEnabled end' "$SETTINGS_FILE")"
-vardiff_target="$(jq -r '.vardiffTargetSec // 10' "$SETTINGS_FILE")"
-vardiff_retarget="$(jq -r '.vardiffRetargetSec // 30' "$SETTINGS_FILE")"
-vardiff_tolerance="$(jq -r '.vardiffTolerance // 0.30' "$SETTINGS_FILE")"
-vardiff_min="$(jq -r '.vardiffMinDiff // .minDiff // 1' "$SETTINGS_FILE")"
-vardiff_max="$(jq -r '.vardiffMaxDiff // .maxDiff // 1000000000' "$SETTINGS_FILE")"
-vardiff_up="$(jq -r '.vardiffMaxUpFactor // 8' "$SETTINGS_FILE")"
-vardiff_down="$(jq -r '.vardiffMaxDownFactor // 4' "$SETTINGS_FILE")"
-vardiff_grace="$(jq -r '.vardiffGraceSec // 15' "$SETTINGS_FILE")"
+start_diff="$(jq -r '.startDiff // 10000' "$SETTINGS_FILE")"
+vardiff_min="$(jq -r '.vardiffMinDiff // .minDiff // 1000' "$SETTINGS_FILE")"
+vardiff_max="$(jq -r '.vardiffMaxDiff // .maxDiff // 2000000' "$SETTINGS_FILE")"
+
+# SoggyPools SHA256 VarDiff policy.
+# Intentionally server-controlled rather than user configurable.
+vardiff_enabled=true
+vardiff_target=30
+vardiff_retarget=120
+vardiff_tolerance=0.50
+vardiff_up=2
+vardiff_down=2
+vardiff_grace=60
 
 COINBASE_SIG="SoggyPools On Umbrel"
 
@@ -176,13 +172,7 @@ jq -n \
     vardiff_tolerance:$vardiff_tolerance,
     vardiff_max_up_factor:$vardiff_up,
     vardiff_max_down_factor:$vardiff_down,
-    vardiff_grace_sec:$vardiff_grace,
-    mindiff_overrides:{
-      nicehash:500000,
-      NiceHash:500000,
-      MiningRigRentals:1000000,
-      miningrigrentals:1000000
-    }
+    vardiff_grace_sec:$vardiff_grace
   }' > "$CONFIG"
 
 # Jansson/CKPool distinguishes integer from real JSON values. jq serializes
@@ -198,6 +188,7 @@ echo "[bch-solo] Starting BCH CKPool in solo mode on :3333"
 echo "[bch-solo] Network: $network (BCHN chain=$actual_chain)"
 echo "[bch-solo] Coinbase signature: $COINBASE_SIG"
 echo "[bch-solo] Fallback payout address: $payout"
+echo "[bch-solo] VarDiff policy: min=$vardiff_min start=$start_diff max=$vardiff_max target=${vardiff_target}s retarget=${vardiff_retarget}s tolerance=50% max-step=2x grace=${vardiff_grace}s"
 if [ "$ckpool_payout" != "$payout" ]; then
   echo "[bch-solo] CKPool-compatible payout address: $ckpool_payout"
 fi

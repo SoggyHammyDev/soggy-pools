@@ -4,7 +4,7 @@ category: bitcoin
 name: BCH Solo Pool
 
 icon: "https://raw.githubusercontent.com/SoggyHammyDev/soggy-pools/main/soggy-pools-bch-solo/icon.png?v=0193"
-version: "0.1.96"
+version: "0.1.97"
 tagline: Solo mine Bitcoin Cash with BCHN and CKPool
 description: >-
   A self-hosted Bitcoin Cash solo mining node for Umbrel. Runs Bitcoin Cash Node
@@ -23,12 +23,11 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Carries forward the working Testnet4 runtime fixes: clears stale CKPool PID/socket
-  state, explicitly wires BCHN RPC/ZMQ ports, waits for BCHN RPC and a valid block
-  template, forces poolfee to JSON real 0.0, converts configured bchtest CashAddr
-  fallback payouts to legacy testnet form for CKPool compatibility, and patches the
-  BCH fork so BCHN chain name test4 is treated as bchtest. Keeps the ZEC-style
-  Overview / Miners / Blocks / Settings dashboard, Testnet4, prune target, VarDiff
-  controls, automatic GHCR publishing, and the SoggyPools On Umbrel coinbase tag.
+  Reworks SHA256 VarDiff into a SoggyPools-managed policy while keeping minimum,
+  starting, and maximum share difficulty user configurable. VarDiff now targets
+  roughly 30 seconds per share, retargets every 120 seconds, uses a 50% tolerance
+  band, limits each adjustment to 2x up or down, and gives new miners a 60-second
+  grace period. The Settings page now exposes only Min Diff, Start Diff, and Max
+  Diff with validation that Min <= Start <= Max.
 submitter: SoggyHammyDev
 

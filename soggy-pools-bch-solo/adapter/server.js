@@ -24,16 +24,21 @@ const DEFAULTS = Object.freeze({
   payoutAddress: '',
   storageMode: 'pruned',
   pruneTargetMb: 10240,
-  startDiff: 500,
-  vardiffEnabled: true,
-  vardiffTargetSec: 10,
-  vardiffRetargetSec: 30,
-  vardiffTolerance: 0.30,
-  vardiffMinDiff: 1,
-  vardiffMaxDiff: 1000000000,
-  vardiffMaxUpFactor: 8,
-  vardiffMaxDownFactor: 4,
-  vardiffGraceSec: 15,
+
+  // User-configurable SHA256 difficulty range.
+  startDiff: 10000,
+  vardiffMinDiff: 1000,
+  vardiffMaxDiff: 2000000,
+});
+
+const VARDIFF_POLICY = Object.freeze({
+  enabled: true,
+  targetSec: 30,
+  retargetSec: 120,
+  tolerance: 0.50,
+  maxUpFactor: 2,
+  maxDownFactor: 2,
+  graceSec: 60,
 });
 
 let rpcId = 0;
@@ -228,7 +233,7 @@ function stratumProbe() {
     socket.setEncoding('utf8');
     socket.once('connect', () => {
       connected = true;
-      socket.write(JSON.stringify({ id: 1, method: 'mining.subscribe', params: ['SoggyPools-Dashboard/0.1.96'] }) + '\n');
+      socket.write(JSON.stringify({ id: 1, method: 'mining.subscribe', params: ['SoggyPools-Dashboard/0.1.97'] }) + '\n');
     });
     socket.on('data', (chunk) => {
       data += chunk;
@@ -692,51 +697,142 @@ async function status() {
 
 function cleanSettings(body) {
   const out = { ...readSettings() };
-  out.network = body.network === 'testnet4' ? 'testnet4' : 'mainnet';
 
-  const addr = String(body.payoutAddress ?? '').trim();
-  const mainCashAddr = /^(bitcoincash:)?[qp][a-z0-9]{40,70}$/i;
-  const mainLegacy = /^[13][a-km-zA-HJ-NP-Z1-9]{25,40}$/;
-  const testCashAddr = /^(bchtest:)[qp][a-z0-9]{40,70}$/i;
-  const testLegacy = /^[mn2][a-km-zA-HJ-NP-Z1-9]{25,40}$/;
+  out.network =
+    body.network === 'testnet4'
+      ? 'testnet4'
+      : 'mainnet';
+
+  const addr =
+    String(
+      body.payoutAddress ??
+      ''
+    ).trim();
+
+  const mainCashAddr =
+    /^(bitcoincash:)?[qp][a-z0-9]{40,70}$/i;
+
+  const mainLegacy =
+    /^[13][a-km-zA-HJ-NP-Z1-9]{25,40}$/;
+
+  const testCashAddr =
+    /^(bchtest:)[qp][a-z0-9]{40,70}$/i;
+
+  const testLegacy =
+    /^[mn2][a-km-zA-HJ-NP-Z1-9]{25,40}$/;
 
   if (addr) {
-    if (out.network === 'testnet4' && !testCashAddr.test(addr) && !testLegacy.test(addr)) {
-      throw new Error('Testnet4 requires a BCH testnet address (bchtest:q… or a legacy testnet address).');
+    if (
+      out.network === 'testnet4' &&
+      !testCashAddr.test(addr) &&
+      !testLegacy.test(addr)
+    ) {
+      throw new Error(
+        'Testnet4 requires a BCH testnet address (bchtest:q… or a legacy testnet address).'
+      );
     }
-    if (out.network === 'mainnet' && !mainCashAddr.test(addr) && !mainLegacy.test(addr)) {
-      throw new Error('Mainnet requires a BCH mainnet address (bitcoincash:q… or a legacy mainnet address).');
+
+    if (
+      out.network === 'mainnet' &&
+      !mainCashAddr.test(addr) &&
+      !mainLegacy.test(addr)
+    ) {
+      throw new Error(
+        'Mainnet requires a BCH mainnet address (bitcoincash:q… or a legacy mainnet address).'
+      );
     }
   }
+
   out.payoutAddress = addr;
-  out.storageMode = body.storageMode === 'archive' ? 'archive' : 'pruned';
 
-  const integer = (key, min, max, fallback = out[key]) => {
-    const value = Math.round(number(body[key] ?? fallback, fallback));
-    if (!Number.isFinite(value) || value < min || value > max) throw new Error(`${key} must be between ${min} and ${max}.`);
+  out.storageMode =
+    body.storageMode === 'archive'
+      ? 'archive'
+      : 'pruned';
+
+  const integer = (
+    key,
+    min,
+    max,
+    fallback = out[key]
+  ) => {
+    const value =
+      Math.round(
+        number(
+          body[key] ?? fallback,
+          fallback
+        )
+      );
+
+    if (
+      !Number.isFinite(value) ||
+      value < min ||
+      value > max
+    ) {
+      throw new Error(
+        `${key} must be between ${min} and ${max}.`
+      );
+    }
+
     out[key] = value;
   };
-  const decimal = (key, min, max, fallback = out[key]) => {
-    const value = number(body[key] ?? fallback, fallback);
-    if (!Number.isFinite(value) || value < min || value > max) throw new Error(`${key} must be between ${min} and ${max}.`);
-    out[key] = value;
-  };
 
-  integer('pruneTargetMb', 2048, 500000);
-  integer('startDiff', 1, 10000000000);
-  out.vardiffEnabled = body.vardiffEnabled === true || String(body.vardiffEnabled) === 'true';
-  integer('vardiffTargetSec', 1, 3600);
-  integer('vardiffRetargetSec', 1, 86400);
-  decimal('vardiffTolerance', 0, 1);
-  integer('vardiffMinDiff', 1, 10000000000);
-  integer('vardiffMaxDiff', 1, 100000000000);
-  integer('vardiffMaxUpFactor', 1, 1000);
-  integer('vardiffMaxDownFactor', 1, 1000);
-  integer('vardiffGraceSec', 0, 86400);
+  integer(
+    'pruneTargetMb',
+    2048,
+    500000
+  );
 
-  if (out.vardiffMaxDiff < out.vardiffMinDiff) throw new Error('VarDiff maximum difficulty must be at least the minimum difficulty.');
-  if (out.startDiff < out.vardiffMinDiff) out.startDiff = out.vardiffMinDiff;
-  if (out.startDiff > out.vardiffMaxDiff) out.startDiff = out.vardiffMaxDiff;
+  integer(
+    'vardiffMinDiff',
+    1,
+    10000000000
+  );
+
+  integer(
+    'vardiffMaxDiff',
+    1,
+    100000000000
+  );
+
+  integer(
+    'startDiff',
+    1,
+    10000000000
+  );
+
+  if (
+    out.vardiffMaxDiff <
+    out.vardiffMinDiff
+  ) {
+    throw new Error(
+      'Maximum difficulty must be greater than or equal to minimum difficulty.'
+    );
+  }
+
+  if (
+    out.startDiff <
+      out.vardiffMinDiff ||
+    out.startDiff >
+      out.vardiffMaxDiff
+  ) {
+    throw new Error(
+      'Start difficulty must be between minimum and maximum difficulty.'
+    );
+  }
+
+  // Never persist client-supplied VarDiff policy knobs.
+  for (const key of [
+    'vardiffEnabled',
+    'vardiffTargetSec',
+    'vardiffRetargetSec',
+    'vardiffTolerance',
+    'vardiffMaxUpFactor',
+    'vardiffMaxDownFactor',
+    'vardiffGraceSec',
+  ]) {
+    delete out[key];
+  }
 
   return out;
 }
@@ -747,7 +843,7 @@ http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { ok: true });
-    if (req.method === 'GET' && url.pathname === '/api/settings') return json(res, 200, { settings: readSettings(), coinbaseSig: COINBASE_SIG });
+    if (req.method === 'GET' && url.pathname === '/api/settings') return json(res, 200, { settings: readSettings(), vardiffPolicy: VARDIFF_POLICY, coinbaseSig: COINBASE_SIG });
     if (req.method === 'GET' && url.pathname === '/api/status') return json(res, 200, await status());
     if (req.method === 'POST' && url.pathname === '/api/settings') {
       const body = JSON.parse(await readBody(req) || '{}');
@@ -755,6 +851,7 @@ http.createServer(async (req, res) => {
       atomicWriteSettings(settings);
       return json(res, 200, {
         settings,
+        vardiffPolicy: VARDIFF_POLICY,
         coinbaseSig: COINBASE_SIG,
         message: `Saved. Restart BCH Solo Pool to apply changes. ${networkLabel(settings.network)} chain data is kept separately.`,
       });
