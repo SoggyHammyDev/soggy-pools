@@ -228,7 +228,7 @@ function stratumProbe() {
     socket.setEncoding('utf8');
     socket.once('connect', () => {
       connected = true;
-      socket.write(JSON.stringify({ id: 1, method: 'mining.subscribe', params: ['SoggyPools-Dashboard/0.1.94'] }) + '\n');
+      socket.write(JSON.stringify({ id: 1, method: 'mining.subscribe', params: ['SoggyPools-Dashboard/0.1.96'] }) + '\n');
     });
     socket.on('data', (chunk) => {
       data += chunk;
@@ -383,43 +383,365 @@ function recentBlocks(network = 'mainnet') {
 }
 
 function normalizeWorkers(workersRaw, clientsRaw, shareEntries) {
-  const workerList = Array.isArray(workersRaw?.workers) ? workersRaw.workers : [];
-  const clientList = Array.isArray(clientsRaw?.clients) ? clientsRaw.clients : [];
-  const shareCounts = new Map();
-  for (const s of shareEntries) {
-    if (s.result !== 'accepted') continue;
-    shareCounts.set(s.workerName, (shareCounts.get(s.workerName) || 0) + 1);
+  const workerList = Array.isArray(workersRaw?.workers)
+    ? workersRaw.workers
+    : (Array.isArray(workersRaw) ? workersRaw : []);
+
+  const clientList = Array.isArray(clientsRaw?.clients)
+    ? clientsRaw.clients
+    : (Array.isArray(clientsRaw) ? clientsRaw : []);
+
+  const names = new Set();
+  const workerByName = new Map();
+
+  for (const w of workerList) {
+    const name = String(
+      w?.worker ||
+      w?.workername ||
+      ''
+    ).trim();
+
+    if (!name) continue;
+
+    names.add(name);
+    workerByName.set(name, w);
   }
 
-  return workerList.map((w) => {
-    const name = String(w.worker || 'miner');
-    const clients = clientList.filter((c) => String(c.workername || '') === name && c.authorised !== false);
-    const now = Math.floor(Date.now() / 1000);
-    const start = clients.reduce((min, c) => {
-      const v = number(c.starttime, 0);
-      return v > 0 && (min === 0 || v < min) ? v : min;
-    }, 0);
-    const bestClient = clients.reduce((best, c) => number(c.bestdiff, 0) > number(best?.bestdiff, 0) ? c : best, null);
-    const diff = clients.reduce((max, c) => Math.max(max, number(c.diff, 0)), 0) || number(w.mindiff, 0);
-    const userAgent = bestClient?.useragent || clients.find((c) => c.useragent)?.useragent || '';
-    const bestDiff = Math.max(number(w.bestdiff, 0), ...clients.map((c) => number(c.bestdiff, 0)), 0);
+  for (const c of clientList) {
+    if (c?.authorised === false) continue;
+
+    const name = String(
+      c?.workername ||
+      c?.worker ||
+      ''
+    ).trim();
+
+    if (name) names.add(name);
+  }
+
+  const shareCounts = new Map();
+  const bestShareByName = new Map();
+  const latestShareByName = new Map();
+  const latestAssignedDiffByName = new Map();
+
+  for (const entry of shareEntries) {
+    if (entry.result !== 'accepted') continue;
+
+    const name = String(
+      entry.workerName ||
+      entry.worker ||
+      ''
+    ).trim();
+
+    if (!name) continue;
+
+    names.add(name);
+
+    shareCounts.set(
+      name,
+      (shareCounts.get(name) || 0) + 1
+    );
+
+    const shareDiff = number(
+      entry.shareDiff,
+      0
+    );
+
+    const assignedDiff = number(
+      entry.assignedDiff,
+      0
+    );
+
+    bestShareByName.set(
+      name,
+      Math.max(
+        bestShareByName.get(name) || 0,
+        shareDiff
+      )
+    );
+
+    const atMs = number(entry.atMs, 0);
+
+    const atSec = atMs > 0
+      ? Math.floor(atMs / 1000)
+      : number(entry.at, 0);
+
+    if (
+      atSec >=
+      (latestShareByName.get(name) || 0)
+    ) {
+      latestShareByName.set(
+        name,
+        atSec
+      );
+
+      latestAssignedDiffByName.set(
+        name,
+        assignedDiff
+      );
+    }
+  }
+
+  const now = Math.floor(
+    Date.now() / 1000
+  );
+
+  const nowMs = Date.now();
+
+  const DIFF1_WORK = 4294967296;
+
+  /*
+   * CKPool on this BCH build does not reliably return
+   * workers/clients/poolstats over ckpmsg.
+   *
+   * When native dsps1 data is unavailable, estimate miner
+   * hashrate from accepted assigned difficulty:
+   *
+   *   H/s = sum(assignedDiff * 2^32) / seconds
+   *
+   * Use up to a five-minute rolling window.
+   */
+
+  const acceptedTimes = shareEntries
+    .filter((entry) =>
+      entry.result === 'accepted' &&
+      number(entry.assignedDiff, 0) > 0 &&
+      number(entry.atMs, 0) > 0
+    )
+    .map((entry) =>
+      number(entry.atMs, 0)
+    );
+
+  const oldestAcceptedMs =
+    acceptedTimes.length
+      ? Math.min(...acceptedTimes)
+      : 0;
+
+  const availableSeconds =
+    oldestAcceptedMs > 0
+      ? Math.max(
+          0,
+          (nowMs - oldestAcceptedMs) / 1000
+        )
+      : 0;
+
+  const estimateWindowSeconds =
+    availableSeconds > 0
+      ? Math.max(
+          60,
+          Math.min(
+            300,
+            availableSeconds
+          )
+        )
+      : 300;
+
+  const estimateCutoffMs =
+    nowMs -
+    estimateWindowSeconds * 1000;
+
+  return Array.from(names).map((name) => {
+    const w =
+      workerByName.get(name) ||
+      {};
+
+    const clients = clientList.filter((c) => {
+      const clientName = String(
+        c?.workername ||
+        c?.worker ||
+        ''
+      ).trim();
+
+      return (
+        clientName === name &&
+        c?.authorised !== false
+      );
+    });
+
+    const start = clients.reduce(
+      (min, c) => {
+        const v = number(
+          c.starttime,
+          0
+        );
+
+        return (
+          v > 0 &&
+          (min === 0 || v < min)
+        )
+          ? v
+          : min;
+      },
+      0
+    );
+
+    const bestClient = clients.reduce(
+      (best, c) =>
+        number(c.bestdiff, 0) >
+        number(best?.bestdiff, 0)
+          ? c
+          : best,
+      null
+    );
+
+    const diff =
+      clients.reduce(
+        (max, c) =>
+          Math.max(
+            max,
+            number(c.diff, 0)
+          ),
+        0
+      ) ||
+      number(w.mindiff, 0) ||
+      latestAssignedDiffByName.get(name) ||
+      0;
+
+    const userAgent =
+      bestClient?.useragent ||
+      clients.find(
+        (c) => c.useragent
+      )?.useragent ||
+      '';
+
+    const bestDiff = Math.max(
+      number(w.bestdiff, 0),
+      ...clients.map(
+        (c) =>
+          number(c.bestdiff, 0)
+      ),
+      bestShareByName.get(name) || 0,
+      0
+    );
+
+    const lastShare =
+      number(w.lastshare, 0) ||
+      latestShareByName.get(name) ||
+      null;
+
+    const dot = name.indexOf('.');
+
+    const displayName =
+      dot >= 0 &&
+      dot < name.length - 1
+        ? name.slice(dot + 1)
+        : name;
+
+    const upstreamHashrate =
+      dspsToHashrate(w.dsps1) ||
+      clients.reduce(
+        (sum, c) =>
+          sum +
+          dspsToHashrate(c.dsps1),
+        0
+      );
+
+    const assignedWork =
+      shareEntries.reduce(
+        (sum, entry) => {
+          if (
+            entry.result !==
+            'accepted'
+          ) {
+            return sum;
+          }
+
+          const entryName = String(
+            entry.workerName ||
+            entry.worker ||
+            ''
+          ).trim();
+
+          if (entryName !== name) {
+            return sum;
+          }
+
+          const atMs = number(
+            entry.atMs,
+            0
+          );
+
+          if (
+            atMs <= 0 ||
+            atMs < estimateCutoffMs
+          ) {
+            return sum;
+          }
+
+          return (
+            sum +
+            number(
+              entry.assignedDiff,
+              0
+            )
+          );
+        },
+        0
+      );
+
+    const estimatedHashrate =
+      assignedWork > 0
+        ? (
+            assignedWork *
+            DIFF1_WORK /
+            estimateWindowSeconds
+          )
+        : 0;
+
     return {
       workerName: name,
       worker: name,
-      user: String(w.user || ''),
-      userAgent: String(userAgent),
-      hashrate1m: dspsToHashrate(w.dsps1),
-      shareDifficulty: diff,
-      difficulty: diff,
-      shares: shareCounts.get(name) || 0,
-      bestDiff,
-      connectedSeconds: start > 0 ? Math.max(0, now - start) : 0,
-      lastShare: number(w.lastshare, 0) || null,
-      idle: Boolean(w.idle),
-    };
-  }).filter((w) => !w.idle || w.connectedSeconds > 0 || w.lastShare);
-}
+      displayName,
 
+      user:
+        String(w.user || ''),
+
+      userAgent:
+        String(userAgent),
+
+      hashrate1m:
+        upstreamHashrate ||
+        estimatedHashrate,
+
+      hashrateEstimated:
+        upstreamHashrate <= 0 &&
+        estimatedHashrate > 0,
+
+      hashrateWindowSeconds:
+        estimateWindowSeconds,
+
+      shareDifficulty:
+        diff,
+
+      difficulty:
+        diff,
+
+      shares:
+        shareCounts.get(name) || 0,
+
+      bestDiff,
+
+      connectedSeconds:
+        start > 0
+          ? Math.max(
+              0,
+              now - start
+            )
+          : 0,
+
+      lastShare,
+
+      idle:
+        clients.length === 0 &&
+        Boolean(w.idle),
+    };
+  }).filter((w) =>
+    w.connectedSeconds > 0 ||
+    w.shares > 0 ||
+    w.lastShare ||
+    !w.idle
+  );
+}
 async function status() {
   const settings = readSettings();
   let chain = null;

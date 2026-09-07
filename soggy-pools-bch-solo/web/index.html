@@ -629,7 +629,7 @@
         <div class="figure-sub" id="shares-rate-sub">&mdash;</div>
       </div>
       <div class="figure">
-        <div class="label">Closest share yet</div>
+        <div class="label">Best difficulty</div>
         <div class="figure-v" id="best-share">&mdash;</div>
         <div class="figure-sub">nearest any miner has come to a block</div>
       </div>
@@ -918,6 +918,43 @@ function compact(n) {
   return String(v);
 }
 
+function difficulty(n) {
+  const v = Number(n);
+
+  if (!Number.isFinite(v)) {
+    return '—';
+  }
+
+  const units = [
+    [1e12, 'T'],
+    [1e9,  'G'],
+    [1e6,  'M'],
+    [1e3,  'K']
+  ];
+
+  for (const [limit, suffix] of units) {
+    if (Math.abs(v) >= limit) {
+      const scaled = v / limit;
+
+      return (
+        scaled
+          .toFixed(2)
+          .replace(/\.00$/, '')
+          .replace(/(\.\d)0$/, '$1') +
+        ' ' +
+        suffix
+      );
+    }
+  }
+
+  return v.toLocaleString(
+    undefined,
+    {
+      maximumFractionDigits: 2
+    }
+  );
+}
+
 function bytes(n) {
   const v = Number(n);
   if (!Number.isFinite(v) || v < 0) return '—';
@@ -1202,77 +1239,275 @@ function blockResultTag(result) {
   return '<span class="tag ' + cls + '">' + esc(value || 'unknown') + '</span>';
 }
 
+function minerDisplayName(w) {
+  if (
+    w &&
+    w.displayName
+  ) {
+    return String(
+      w.displayName
+    );
+  }
+
+  const raw = String(
+    (
+      w &&
+      (
+        w.workerName ||
+        w.worker
+      )
+    ) ||
+    'miner'
+  );
+
+  const dot =
+    raw.indexOf('.');
+
+  return (
+    dot >= 0 &&
+    dot < raw.length - 1
+  )
+    ? raw.slice(dot + 1)
+    : raw;
+}
+
 function renderWorkers(workers, networkDiff) {
   const root = $('worker-cards');
+
   if (!workers.length) {
-    root.innerHTML = '<div class="empty"><strong>No miners connected</strong>' +
+    root.innerHTML =
+      '<div class="empty"><strong>No miners connected</strong>' +
       'Point a miner at the address on this page, then check back here.</div>';
+
     return;
   }
 
-  root.innerHTML = workers.map((w) => {
-    const ratio = oneIn(w.bestDiff, networkDiff);
-    const hit = ratio != null && ratio <= 1;
-    return '' +
-      '<article class="miner">' +
-        '<div class="miner-head">' +
-          '<div>' +
-            '<div class="miner-name">' + esc(w.workerName || w.worker || 'miner') + '</div>' +
-            '<div class="miner-sub">' + esc(w.userAgent || 'unknown miner software') + '</div>' +
-          '</div>' +
-          '<span class="pill pill--plain">up ' + duration(w.connectedSeconds) + '</span>' +
-        '</div>' +
-        '<div class="miner-grid">' +
-          '<div>' +
-            '<div class="label">Shares</div>' +
-            '<div class="miner-v">' + num(w.shares) + '</div>' +
-            '<div class="miner-vsub">accepted from this miner</div>' +
-          '</div>' +
-          '<div>' +
-            '<div class="label">Difficulty</div>' +
-            '<div class="miner-v" title="' + esc(num(w.shareDifficulty)) + '">' + compact(w.shareDifficulty) + '</div>' +
-            '<div class="miner-vsub">auto-tuned to this miner</div>' +
-          '</div>' +
-          '<div>' +
-            '<div class="label">Best share</div>' +
-            '<div class="miner-v" title="' + esc(num(w.bestDiff)) + '">' + compact(w.bestDiff) + '</div>' +
-            '<div class="miner-vsub">highest difficulty seen</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="odds">' +
-          '<div class="odds-head">' +
-            '<span class="label">Closest this miner has come</span>' +
-            '<span class="odds-v">' + esc(oddsLabel(ratio)) + '</span>' +
-          '</div>' +
-          '<div class="odds-bar' + (hit ? ' is-hit' : '') + '">' +
-            '<i style="width:' + oddsFill(ratio).toFixed(1) + '%"></i>' +
-          '</div>' +
-          '<div class="odds-axis"><span>1 in 1M</span><span>1 in 1K</span><span>block</span></div>' +
-          '<p class="odds-note">' +
-            (hit
-              ? 'This miner has submitted a share good enough to be a block.'
-              : 'Log scale. Each step right is ten times closer — and a block is still pure chance.') +
-          '</p>' +
-        '</div>' +
-      '</article>';
-  }).join('');
-}
+  const orderedWorkers =
+    [...workers].sort((a, b) => {
+      const aName =
+        minerDisplayName(a);
 
+      const bName =
+        minerDisplayName(b);
+
+      const friendly =
+        aName.localeCompare(
+          bName,
+          undefined,
+          {
+            numeric: true,
+            sensitivity: 'base'
+          }
+        );
+
+      if (friendly !== 0) {
+        return friendly;
+      }
+
+      return String(
+        a.workerName ||
+        a.worker ||
+        ''
+      ).localeCompare(
+        String(
+          b.workerName ||
+          b.worker ||
+          ''
+        ),
+        undefined,
+        {
+          numeric: true,
+          sensitivity: 'variant'
+        }
+      );
+    });
+
+  root.innerHTML =
+    orderedWorkers.map((w) => {
+      const best =
+        Number(w.bestDiff);
+
+      const net =
+        Number(networkDiff);
+
+      const bestPercent =
+        Number.isFinite(best) &&
+        Number.isFinite(net) &&
+        best > 0 &&
+        net > 0
+          ? (best / net) * 100
+          : null;
+
+      const bestPercentLabel =
+        bestPercent == null
+          ? '—'
+          : bestPercent >= 0.01
+            ? bestPercent.toFixed(2) + '%'
+            : bestPercent.toPrecision(3) + '%';
+
+      return '' +
+        '<article class="miner">' +
+
+          '<div class="miner-head">' +
+            '<div>' +
+
+              '<div class="miner-name">' +
+                esc(
+                  minerDisplayName(w)
+                ) +
+              '</div>' +
+
+              '<div class="miner-sub">' +
+                esc(
+                  w.userAgent ||
+                  'unknown miner software'
+                ) +
+              '</div>' +
+
+            '</div>' +
+
+            '<span class="pill pill--plain">' +
+              'up ' +
+              duration(
+                w.connectedSeconds
+              ) +
+            '</span>' +
+
+          '</div>' +
+
+          '<div class="miner-grid">' +
+
+            '<div>' +
+              '<div class="label">Shares</div>' +
+              '<div class="miner-v">' +
+                num(w.shares) +
+              '</div>' +
+              '<div class="miner-vsub">' +
+                'accepted from this miner' +
+              '</div>' +
+            '</div>' +
+
+            '<div>' +
+              '<div class="label">Difficulty</div>' +
+              '<div class="miner-v" title="' +
+                esc(
+                  num(
+                    w.shareDifficulty
+                  )
+                ) +
+              '">' +
+                difficulty(
+                  w.shareDifficulty
+                ) +
+              '</div>' +
+              '<div class="miner-vsub">' +
+                'auto-tuned to this miner' +
+              '</div>' +
+            '</div>' +
+
+            '<div>' +
+              '<div class="label">Best share</div>' +
+              '<div class="miner-v" title="' +
+                esc(
+                  num(
+                    w.bestDiff
+                  )
+                ) +
+              '">' +
+                difficulty(
+                  w.bestDiff
+                ) +
+              '</div>' +
+              '<div class="miner-vsub">' +
+                'highest difficulty seen' +
+              '</div>' +
+            '</div>' +
+
+          '</div>' +
+
+          '<div class="odds">' +
+
+            '<div class="odds-head">' +
+
+              '<span class="label">' +
+                'Best share vs network' +
+              '</span>' +
+
+              '<span class="odds-v">' +
+                esc(
+                  bestPercentLabel
+                ) +
+              '</span>' +
+
+            '</div>' +
+
+            '<p class="odds-note">' +
+              'Best share difficulty compared with the current network difficulty.' +
+            '</p>' +
+
+          '</div>' +
+
+        '</article>';
+    }).join('');
+}
 function renderShares(shareLog) {
-  $('share-rows').innerHTML = shareLog && shareLog.length
-    ? shareLog.map((s) =>
-        '<tr>' +
-          '<td>' + esc(s.workerName || s.worker || 'miner') + '</td>' +
-          '<td>' + shareResultTag(s) + '</td>' +
-          '<td class="n col-2" title="' + esc(num(s.shareDiff)) + '">' + compact(s.shareDiff) + '</td>' +
-          '<td class="n col-2" title="' + esc(num(s.networkDiff)) + '">' + compact(s.networkDiff) + '</td>' +
-          '<td class="time">' + esc(when(s.at)) + '</td>' +
-        '</tr>'
-      ).join('')
-    : '<tr><td colspan="5" class="empty"><strong>No shares yet</strong>' +
-      'Shares show up here within seconds of a miner connecting.</td></tr>';
-}
+  $('share-rows').innerHTML =
+    shareLog &&
+    shareLog.length
+      ? shareLog
+          .slice(0, 5)
+          .map((s) =>
+            '<tr>' +
 
+              '<td>' +
+                esc(
+                  minerDisplayName(s)
+                ) +
+              '</td>' +
+
+              '<td>' +
+                shareResultTag(s) +
+              '</td>' +
+
+              '<td class="n col-2" title="' +
+                esc(
+                  num(
+                    s.shareDiff
+                  )
+                ) +
+              '">' +
+                difficulty(
+                  s.shareDiff
+                ) +
+              '</td>' +
+
+              '<td class="n col-2" title="' +
+                esc(
+                  num(
+                    s.networkDiff
+                  )
+                ) +
+              '">' +
+                difficulty(
+                  s.networkDiff
+                ) +
+              '</td>' +
+
+              '<td class="time">' +
+                esc(
+                  when(s.at)
+                ) +
+              '</td>' +
+
+            '</tr>'
+          )
+          .join('')
+
+      : '<tr><td colspan="5" class="empty">' +
+        '<strong>No shares yet</strong>' +
+        'Shares show up here within seconds of a miner connecting.' +
+        '</td></tr>';
+}
 function renderBlocks(blocks) {
   $('block-rows').innerHTML = blocks && blocks.length
     ? blocks.map((b) =>
@@ -1400,8 +1635,8 @@ async function tick() {
     const v = Number(w.bestDiff);
     return Number.isFinite(v) && v > acc ? v : acc;
   }, 0);
-  $('best-share').textContent = best > 0 ? oddsLabel(oneIn(best, d.pool.currentNetworkDiff)) : '—';
-
+  $('best-share').textContent = best > 0 ? difficulty(best) : '—';
+  $('best-share').title = best > 0 ? num(best) : '';
   /* --- diagnostics --- */
   $('height').textContent = num(d.node.height);
   $('headers').textContent = num(d.node.headers);
@@ -1420,7 +1655,7 @@ async function tick() {
   /* --- current job panel --- */
   $('settings-job').textContent = d.pool.job || '—';
   $('settings-job-height').textContent = num(d.pool.jobHeight);
-  $('settings-block-diff').textContent = compact(d.pool.currentNetworkDiff);
+  $('settings-block-diff').textContent = difficulty(d.pool.currentNetworkDiff);
   $('current-block-bits').textContent = d.pool.currentBits ? 'bits ' + d.pool.currentBits : '\u00a0';
   $('start-diff').textContent = compact(d.pool.startDiff);
   $('settings-share-target').textContent = d.pool.shareTarget

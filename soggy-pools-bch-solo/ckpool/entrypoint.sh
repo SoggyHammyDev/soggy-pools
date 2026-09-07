@@ -159,6 +159,7 @@ jq -n \
   '{
     btcd: [{url:$rpc, auth:$user, pass:$pass, notify:true, zmqnotify:$zmq}],
     bchaddress:$payout,
+    btcaddress:$payout,
     pooladdress:$payout,
     poolfee:0,
     btcsig:$sig,
