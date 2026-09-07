@@ -436,40 +436,143 @@ function recentBlocks() {
 function normalizeWorkers(workersRaw, clientsRaw, shareEntries) {
   const workerList = Array.isArray(workersRaw?.workers) ? workersRaw.workers : [];
   const clientList = Array.isArray(clientsRaw?.clients) ? clientsRaw.clients : [];
-  const shareCounts = new Map();
-  for (const s of shareEntries) {
-    if (s.result !== 'accepted') continue;
-    shareCounts.set(s.workerName, (shareCounts.get(s.workerName) || 0) + 1);
+
+  const names = new Set();
+  const workersByName = new Map();
+
+  for (const w of workerList) {
+    const name = String(w.worker || w.workername || '').trim();
+    if (!name) continue;
+    names.add(name);
+    workersByName.set(name, w);
   }
-  return workerList.map((w) => {
-    const name = String(w.worker || 'miner');
-    const clients = clientList.filter((c) => String(c.workername || '') === name && c.authorised !== false);
-    const now = Math.floor(Date.now() / 1000);
+
+  for (const c of clientList) {
+    if (c.authorised === false) continue;
+    const name = String(c.workername || c.worker || '').trim();
+    if (name) names.add(name);
+  }
+
+  const shareCounts = new Map();
+  const bestShare = new Map();
+  const lastShare = new Map();
+
+  for (const entry of shareEntries) {
+    if (entry.result !== 'accepted') continue;
+
+    const name = String(entry.workerName || entry.worker || '').trim();
+    if (!name) continue;
+
+    names.add(name);
+
+    shareCounts.set(
+      name,
+      (shareCounts.get(name) || 0) + 1
+    );
+
+    bestShare.set(
+      name,
+      Math.max(
+        bestShare.get(name) || 0,
+        number(entry.shareDiff, 0)
+      )
+    );
+
+    const atMs = number(entry.atMs, 0);
+    const at = atMs > 0
+      ? Math.floor(atMs / 1000)
+      : number(entry.at, 0);
+
+    lastShare.set(
+      name,
+      Math.max(lastShare.get(name) || 0, at)
+    );
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+
+  return Array.from(names).map((name) => {
+    const w = workersByName.get(name) || {};
+
+    const clients = clientList.filter((c) => {
+      const clientName = String(c.workername || c.worker || '').trim();
+      return clientName === name && c.authorised !== false;
+    });
+
     const start = clients.reduce((min, c) => {
       const v = number(c.starttime, 0);
       return v > 0 && (min === 0 || v < min) ? v : min;
     }, 0);
-    const bestClient = clients.reduce((best, c) => number(c.bestdiff, 0) > number(best?.bestdiff, 0) ? c : best, null);
-    const diff = clients.reduce((max, c) => Math.max(max, number(c.diff, 0)), 0) || number(w.mindiff, 0);
-    const userAgent = bestClient?.useragent || clients.find((c) => c.useragent)?.useragent || '';
-    const bestDiff = Math.max(number(w.bestdiff, 0), ...clients.map((c) => number(c.bestdiff, 0)), 0);
+
+    const bestClient = clients.reduce(
+      (best, c) =>
+        number(c.bestdiff, 0) > number(best?.bestdiff, 0)
+          ? c
+          : best,
+      null
+    );
+
+    const diff =
+      clients.reduce(
+        (max, c) => Math.max(max, number(c.diff, 0)),
+        0
+      ) ||
+      number(w.mindiff, 0) ||
+      0;
+
+    const userAgent =
+      bestClient?.useragent ||
+      clients.find((c) => c.useragent)?.useragent ||
+      '';
+
+    const bestDiff = Math.max(
+      number(w.bestdiff, 0),
+      ...clients.map((c) => number(c.bestdiff, 0)),
+      bestShare.get(name) || 0,
+      0
+    );
+
+    const last =
+      number(w.lastshare, 0) ||
+      lastShare.get(name) ||
+      null;
+
     return {
       workerName: name,
       worker: name,
       user: String(w.user || ''),
       userAgent: String(userAgent),
-      hashrate1m: dspsToHashrate(w.dsps1),
+
+      hashrate1m:
+        dspsToHashrate(w.dsps1) ||
+        clients.reduce(
+          (sum, c) => sum + dspsToHashrate(c.dsps1),
+          0
+        ),
+
       shareDifficulty: diff,
       difficulty: diff,
       shares: shareCounts.get(name) || 0,
       bestDiff,
-      connectedSeconds: start > 0 ? Math.max(0, now - start) : 0,
-      lastShare: number(w.lastshare, 0) || null,
-      idle: Boolean(w.idle),
-    };
-  }).filter((w) => !w.idle || w.connectedSeconds > 0 || w.lastShare);
-}
 
+      connectedSeconds:
+        start > 0
+          ? Math.max(0, now - start)
+          : 0,
+
+      lastShare: last,
+
+      idle:
+        clients.length === 0 &&
+        Boolean(w.idle)
+    };
+  }).filter((w) =>
+    w.connectedSeconds > 0 ||
+    w.shares > 0 ||
+    w.lastShare ||
+    !w.idle
+  );
+}
 async function status() {
   const settings = readSettings();
   let chain = null;

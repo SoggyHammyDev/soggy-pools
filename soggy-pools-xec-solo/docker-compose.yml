@@ -12,7 +12,7 @@ services:
       - xec-adapter
 
   xec-adapter:
-    image: ghcr.io/soggyhammydev/xec-solo-adapter:0.1.5
+    image: ghcr.io/soggyhammydev/xec-solo-adapter:0.1.7
     restart: on-failure
     stop_grace_period: 5s
     environment:
