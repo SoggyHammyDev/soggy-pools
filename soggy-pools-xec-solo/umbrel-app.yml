@@ -1,8 +1,9 @@
-manifestVersion: 1
+﻿manifestVersion: 1
 id: soggy-pools-xec-solo
 category: bitcoin
 name: XEC Solo Pool
-version: "0.1.1"
+icon: icon.png
+version: "0.1.2"
 tagline: Solo mine eCash with Bitcoin ABC and CKPool
 description: >-
   A self-hosted eCash (XEC) SHA-256 solo mining pool for Umbrel. Runs Bitcoin ABC,
@@ -28,3 +29,4 @@ releaseNotes: >-
   or CKPool by a generic service name. Keeps Bitcoin ABC 0.33.11, 5,000 MiB default
   pruning, eCash-aware CKPool, port 3335 Stratum, and SoggyPools On Umbrel coinbase.
 submitter: SoggyHammyDev
+
