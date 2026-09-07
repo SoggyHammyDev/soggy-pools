@@ -1209,60 +1209,242 @@ function updateSettingsUi() {
 
 function applySettings(settings) {
   if (!settings) return;
-  $('network-mode').value = settings.network === 'testnet4' ? 'testnet4' : 'mainnet';
-  $('payout-address').value = settings.payoutAddress || '';
-  $('storage-mode').value = settings.storageMode || 'pruned';
-  $('prune-target-gib').value = Math.max(2, Math.round(Number(settings.pruneTargetMb || 10240) / 1024));
-  $('start-diff-input').value = settings.startDiff || '500';
-  $('vardiff-enabled').value = String(settings.vardiffEnabled == null ? true : settings.vardiffEnabled);
-  $('vardiff-target-sec').value = settings.vardiffTargetSec || '10';
-  $('vardiff-retarget-sec').value = settings.vardiffRetargetSec || '30';
-  $('vardiff-tolerance').value = settings.vardiffTolerance == null ? '0.30' : settings.vardiffTolerance;
-  $('vardiff-min-diff').value = settings.vardiffMinDiff || '1';
-  $('vardiff-max-diff').value = settings.vardiffMaxDiff || '1000000000';
-  $('vardiff-max-up-factor').value = settings.vardiffMaxUpFactor || '8';
-  $('vardiff-max-down-factor').value = settings.vardiffMaxDownFactor || '4';
-  $('vardiff-grace-sec').value = settings.vardiffGraceSec == null ? '15' : settings.vardiffGraceSec;
+
+  const networkMode = $('network-mode');
+  const payoutAddress = $('payout-address');
+  const storageMode = $('storage-mode');
+  const pruneTarget = $('prune-target-gib');
+
+  const minDiffInput = $('vardiff-min-diff');
+  const startDiffInput = $('start-diff-input');
+  const maxDiffInput = $('vardiff-max-diff');
+
+  if (networkMode) {
+    networkMode.value =
+      settings.network === 'testnet4'
+        ? 'testnet4'
+        : 'mainnet';
+  }
+
+  if (payoutAddress) {
+    payoutAddress.value =
+      settings.payoutAddress || '';
+  }
+
+  if (storageMode) {
+    storageMode.value =
+      settings.storageMode || 'pruned';
+  }
+
+  if (pruneTarget) {
+    pruneTarget.value =
+      Math.max(
+        2,
+        Math.round(
+          Number(
+            settings.pruneTargetMb || 10240
+          ) / 1024
+        )
+      );
+  }
+
+  if (minDiffInput) {
+    minDiffInput.value =
+      settings.vardiffMinDiff ?? 1000;
+  }
+
+  if (startDiffInput) {
+    startDiffInput.value =
+      settings.startDiff ?? 10000;
+  }
+
+  if (maxDiffInput) {
+    maxDiffInput.value =
+      settings.vardiffMaxDiff ?? 2000000;
+  }
+
   updateSettingsUi();
 }
-
 async function saveSettings(ev) {
   ev.preventDefault();
+
   const btn = $('save-settings');
-  btn.disabled = true;
+
+  if (btn) {
+    btn.disabled = true;
+  }
+
   setSettingsMessage('Saving…', true);
+
   try {
-    const res = await fetch(apiUrl('api/settings'), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        network: $('network-mode').value,
-        payoutAddress: $('payout-address').value.trim(),
-        storageMode: $('storage-mode').value,
-        pruneTargetMb: Math.round(Number($('prune-target-gib').value || 10) * 1024),
-        startDiff: $('start-diff-input').value.trim(),
-        vardiffEnabled: $('vardiff-enabled').value,
-        vardiffTargetSec: $('vardiff-target-sec').value.trim(),
-        vardiffRetargetSec: $('vardiff-retarget-sec').value.trim(),
-        vardiffTolerance: $('vardiff-tolerance').value.trim(),
-        vardiffMinDiff: $('vardiff-min-diff').value.trim(),
-        vardiffMaxDiff: $('vardiff-max-diff').value.trim(),
-        vardiffMaxUpFactor: $('vardiff-max-up-factor').value.trim(),
-        vardiffMaxDownFactor: $('vardiff-max-down-factor').value.trim(),
-        vardiffGraceSec: $('vardiff-grace-sec').value.trim(),
-      }),
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || 'Could not save. Check the address and try again.');
-    applySettings(body.settings);
-    setSettingsMessage(body.message || 'Saved. Restart the app to apply the change.', true);
+    const minEl =
+      $('vardiff-min-diff');
+
+    const startEl =
+      $('start-diff-input');
+
+    const maxEl =
+      $('vardiff-max-diff');
+
+    if (
+      !minEl ||
+      !startEl ||
+      !maxEl
+    ) {
+      throw new Error(
+        'Difficulty controls could not be found. Refresh the dashboard and try again.'
+      );
+    }
+
+    const minDiff =
+      Math.round(
+        Number(minEl.value)
+      );
+
+    const startDiff =
+      Math.round(
+        Number(startEl.value)
+      );
+
+    const maxDiff =
+      Math.round(
+        Number(maxEl.value)
+      );
+
+    if (
+      !Number.isFinite(minDiff) ||
+      !Number.isFinite(startDiff) ||
+      !Number.isFinite(maxDiff)
+    ) {
+      throw new Error(
+        'Min, start, and max difficulty must be valid numbers.'
+      );
+    }
+
+    if (
+      minDiff < 1 ||
+      startDiff < 1 ||
+      maxDiff < 1
+    ) {
+      throw new Error(
+        'Min, start, and max difficulty must be greater than zero.'
+      );
+    }
+
+    if (maxDiff < minDiff) {
+      throw new Error(
+        'Maximum difficulty must be greater than or equal to minimum difficulty.'
+      );
+    }
+
+    if (
+      startDiff < minDiff ||
+      startDiff > maxDiff
+    ) {
+      throw new Error(
+        'Start difficulty must be between minimum and maximum difficulty.'
+      );
+    }
+
+    const networkMode =
+      $('network-mode');
+
+    const payoutAddress =
+      $('payout-address');
+
+    const storageMode =
+      $('storage-mode');
+
+    const pruneTarget =
+      $('prune-target-gib');
+
+    const payload = {
+      network:
+        networkMode
+          ? networkMode.value
+          : 'mainnet',
+
+      payoutAddress:
+        payoutAddress
+          ? payoutAddress.value.trim()
+          : '',
+
+      storageMode:
+        storageMode
+          ? storageMode.value
+          : 'pruned',
+
+      pruneTargetMb:
+        Math.round(
+          Number(
+            pruneTarget
+              ? pruneTarget.value
+              : 10
+          ) * 1024
+        ),
+
+      vardiffMinDiff:
+        minDiff,
+
+      startDiff:
+        startDiff,
+
+      vardiffMaxDiff:
+        maxDiff
+    };
+
+    const res =
+      await fetch(
+        apiUrl('api/settings'),
+        {
+          method: 'POST',
+          headers: {
+            'content-type':
+              'application/json'
+          },
+          body:
+            JSON.stringify(payload)
+        }
+      );
+
+    const body =
+      await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        body.error ||
+        'Could not save settings.'
+      );
+    }
+
+    applySettings(
+      body.settings
+    );
+
+    setSettingsMessage(
+      body.message ||
+      'Saved. Restart the app to apply the change.',
+      true
+    );
+
   } catch (err) {
-    setSettingsMessage(err.message || 'Could not save. Check the address and try again.', false);
+    console.error(
+      'Settings save failed:',
+      err
+    );
+
+    setSettingsMessage(
+      err.message ||
+      'Could not save settings.',
+      false
+    );
+
   } finally {
-    btn.disabled = false;
+    if (btn) {
+      btn.disabled = false;
+    }
   }
 }
-
 /* ---------------------------------------------------------------- renders */
 
 /* The real URL is always what gets copied; masking is display-only, so a
