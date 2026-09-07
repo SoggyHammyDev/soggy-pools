@@ -228,7 +228,7 @@ function stratumProbe() {
     socket.setEncoding('utf8');
     socket.once('connect', () => {
       connected = true;
-      socket.write(JSON.stringify({ id: 1, method: 'mining.subscribe', params: ['SoggyPools-Dashboard/0.1.92'] }) + '\n');
+      socket.write(JSON.stringify({ id: 1, method: 'mining.subscribe', params: ['SoggyPools-Dashboard/0.1.93'] }) + '\n');
     });
     socket.on('data', (chunk) => {
       data += chunk;
