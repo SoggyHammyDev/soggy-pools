@@ -3,7 +3,7 @@ id: soggy-pools-bch-solo
 category: bitcoin
 name: BCH Solo Pool
 
-icon: icon.png
+icon: "https://raw.githubusercontent.com/SoggyHammyDev/soggy-pools/main/soggy-pools-bch-solo/icon.png?v=0192"
 version: "0.1.92"
 tagline: Solo mine Bitcoin Cash with BCHN and CKPool
 description: >-

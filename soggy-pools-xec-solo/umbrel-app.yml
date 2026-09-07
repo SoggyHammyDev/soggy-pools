@@ -1,8 +1,8 @@
-﻿manifestVersion: 1
+manifestVersion: 1
 id: soggy-pools-xec-solo
 category: bitcoin
 name: XEC Solo Pool
-icon: icon.png
+icon: "https://raw.githubusercontent.com/SoggyHammyDev/soggy-pools/main/soggy-pools-xec-solo/icon.png?v=013"
 version: "0.1.2"
 tagline: Solo mine eCash with Bitcoin ABC and CKPool
 description: >-
