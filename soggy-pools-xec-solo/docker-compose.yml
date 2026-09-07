@@ -59,6 +59,9 @@ services:
       - xec-internal
 
   xec-node:
+    image: ghcr.io/soggyhammydev/xec-solo-node:0.1.5
+    restart: on-failure
+    stop_grace_period: 2m
     ports:
       - "8333:8333"
     environment:

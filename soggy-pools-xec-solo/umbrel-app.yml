@@ -3,7 +3,7 @@ id: soggy-pools-xec-solo
 category: bitcoin
 name: XEC Solo Pool
 icon: "https://raw.githubusercontent.com/SoggyHammyDev/soggy-pools/main/soggy-pools-xec-solo/icon.png?v=013"
-version: "0.1.5"
+version: "0.1.6"
 tagline: Solo mine eCash with Bitcoin ABC and CKPool
 description: >-
   A self-hosted eCash (XEC) SHA-256 solo mining pool for Umbrel. Runs Bitcoin ABC,
