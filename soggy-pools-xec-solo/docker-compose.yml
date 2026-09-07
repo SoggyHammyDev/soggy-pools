@@ -3,18 +3,18 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      APP_HOST: soggy-pools-xec-solo_web_1
+      APP_HOST: xec-web
       APP_PORT: 8080
 
-  web:
-    image: ghcr.io/soggyhammydev/xec-solo-web:0.1.0
+  xec-web:
+    image: ghcr.io/soggyhammydev/xec-solo-web:0.1.1
     restart: on-failure
     stop_grace_period: 30s
     depends_on:
-      - adapter
+      - xec-adapter
 
-  adapter:
-    image: ghcr.io/soggyhammydev/xec-solo-adapter:0.1.0
+  xec-adapter:
+    image: ghcr.io/soggyhammydev/xec-solo-adapter:0.1.1
     restart: on-failure
     stop_grace_period: 30s
     environment:
@@ -25,7 +25,7 @@ services:
       XEC_RPC_PASSWORD: "${APP_SEED}"
       STRATUM_PORT: "3335"
       SETTINGS_FILE: /data/settings.json
-      CKPOOL_HOST: ckpool
+      CKPOOL_HOST: xec-ckpool
       CKPOOL_PORT: "3333"
       CKPOOL_LOG_ROOT: /var/lib/ckpool/logs
     volumes:
@@ -34,10 +34,13 @@ services:
       - ${APP_DATA_DIR}/ckpool:/var/lib/ckpool:ro
     depends_on:
       - xec-node
-      - ckpool
+      - xec-ckpool
+    networks:
+      - default
+      - xec-internal
 
-  ckpool:
-    image: ghcr.io/soggyhammydev/xec-solo-ckpool:0.1.0
+  xec-ckpool:
+    image: ghcr.io/soggyhammydev/xec-solo-ckpool:0.1.1
     restart: on-failure
     stop_grace_period: 1m
     environment:
@@ -54,9 +57,11 @@ services:
       - ckpool-runtime:/tmp/ckpool
     depends_on:
       - xec-node
+    networks:
+      - xec-internal
 
   xec-node:
-    image: ghcr.io/soggyhammydev/xec-solo-node:0.1.0
+    image: ghcr.io/soggyhammydev/xec-solo-node:0.1.1
     restart: on-failure
     stop_grace_period: 2m
     environment:
@@ -67,6 +72,12 @@ services:
     volumes:
       - ${APP_DATA_DIR}/node:/data
       - ${APP_DATA_DIR}/data:/settings:ro
+    networks:
+      - xec-internal
 
 volumes:
   ckpool-runtime:
+
+networks:
+  xec-internal:
+    driver: bridge

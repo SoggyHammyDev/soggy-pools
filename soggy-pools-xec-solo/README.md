@@ -4,7 +4,7 @@ Self-hosted eCash (XEC) SHA-256 solo mining for the Soggy Pools Umbrel App Store
 
 ## Components
 
-- **Official Bitcoin ABC Docker image** (0.33.11 at v0.1.0 packaging time), mainnet only in v0.1.0
+- **Official Bitcoin ABC Docker image** (0.33.11 at v0.1.1 packaging time), mainnet only in v0.1.1
 - **Bitcoin-ABC/ecash-ckpool-solo** built from upstream `master`
 - Fixed, checksum-validated `ecash:` coinbase payout address
 - `SoggyPools On Umbrel` coinbase tag
@@ -44,3 +44,8 @@ Stratum remains closed until Bitcoin ABC is synced and its current block templat
 - `rtt.nexttarget` for eCash Heartbeat / Real Time Targeting.
 
 The node runs with `persistrecentheaderstime=1` so RTT has the recent header timing data it needs after restarts.
+
+
+## v0.1.1 isolation fix
+
+XEC internal services use unique aliases (`xec-web`, `xec-adapter`, `xec-ckpool`, `xec-node`). Bitcoin ABC and CKPool are additionally attached to an app-private Docker bridge network so they cannot accidentally resolve or talk to the BCH Solo Pool services on Umbrel's shared app network.
