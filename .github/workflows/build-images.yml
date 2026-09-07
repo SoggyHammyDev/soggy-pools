@@ -38,6 +38,11 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building BCH Solo Pool $VERSION"
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -52,7 +57,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./soggy-pools-bch-solo/${{ matrix.component }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/bch-solo-${{ matrix.component }}:${{ steps.app.outputs.version }}
@@ -64,10 +69,20 @@ jobs:
           cache-from: type=gha,scope=bch-solo-${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=bch-solo-${{ matrix.component }}
 
-      - name: Verify GHCR image exists
+      - name: Verify GHCR multi-arch image
         shell: bash
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect \
-            "${REGISTRY}/${IMAGE_OWNER}/bch-solo-${{ matrix.component }}:${{ steps.app.outputs.version }}" >/dev/null
-          echo "Published ${REGISTRY}/${IMAGE_OWNER}/bch-solo-${{ matrix.component }}:${{ steps.app.outputs.version }}"
+
+          IMAGE="${REGISTRY}/${IMAGE_OWNER}/bch-solo-${{ matrix.component }}:${{ steps.app.outputs.version }}"
+
+          INSPECT="$(docker buildx imagetools inspect "$IMAGE")"
+
+          echo "$INSPECT"
+
+          echo "$INSPECT" | grep -q 'linux/amd64'
+          echo "$INSPECT" | grep -q 'linux/arm64'
+
+          echo "Published multi-arch image: $IMAGE"
+          echo "  - linux/amd64"
+          echo "  - linux/arm64"

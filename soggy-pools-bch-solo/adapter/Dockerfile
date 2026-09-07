@@ -5,7 +5,7 @@ RUN apt-get update \
      libssl-dev libjansson-dev libzmq3-dev \
   && rm -rf /var/lib/apt/lists/*
 ARG CKPOOL_REPO=https://github.com/skaisser/ckpool.git
-ARG CKPOOL_REF=master
+ARG CKPOOL_REF=11692101556501f5d242a83f356d389c086be313
 RUN git clone "$CKPOOL_REPO" /src/ckpool \
   && cd /src/ckpool \
   && git checkout "$CKPOOL_REF" \

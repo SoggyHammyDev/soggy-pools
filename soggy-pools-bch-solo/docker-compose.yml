@@ -5,14 +5,14 @@ services:
       APP_PORT: 8080
 
   web:
-    image: ghcr.io/soggyhammydev/bch-solo-web:0.1.100
+    image: ghcr.io/soggyhammydev/bch-solo-web:0.1.101
     restart: on-failure
     stop_grace_period: 5s
     depends_on:
       - adapter
 
   adapter:
-    image: ghcr.io/soggyhammydev/bch-solo-adapter:0.1.100
+    image: ghcr.io/soggyhammydev/bch-solo-adapter:0.1.101
     restart: on-failure
     stop_grace_period: 5s
     environment:
@@ -35,7 +35,7 @@ services:
       - ckpool
 
   ckpool:
-    image: ghcr.io/soggyhammydev/bch-solo-ckpool:0.1.100
+    image: ghcr.io/soggyhammydev/bch-solo-ckpool:0.1.101
     restart: on-failure
     stop_grace_period: 10s
     environment:
@@ -55,7 +55,7 @@ services:
       - bchn
 
   bchn:
-    image: ghcr.io/soggyhammydev/bch-solo-bchn:0.1.94
+    image: ghcr.io/soggyhammydev/bch-solo-bchn:0.1.101
     restart: on-failure
     stop_grace_period: 2m
     environment:
