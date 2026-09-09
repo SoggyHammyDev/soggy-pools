@@ -8,11 +8,12 @@ RUN apt-get update \
       ca-certificates git build-essential yasm autoconf automake libtool pkgconf libssl-dev libjansson-dev libzmq3-dev \
  && rm -rf /var/lib/apt/lists/*
 
-COPY fix-api-response.patch /tmp/fix-api-response.patch
 RUN git clone "$CKPOOL_REPO" /src/ecash-ckpool \
  && cd /src/ecash-ckpool \
  && git checkout "$CKPOOL_REF" \
- && git apply /tmp/fix-api-response.patch \
+ && grep -Fqx 'static inline void send_api_response(json_t __maybe_unused *val, const int __maybe_unused sockd) {};' src/ckpool.h \
+ && sed -i '/^static inline void send_api_response(/c\static inline void send_api_response(json_t *val, const int sockd) { char *buf; if (unlikely(!val)) { send_unix_msg(sockd, "{}"); return; } buf = json_dumps(val, JSON_COMPACT); json_decref(val); if (unlikely(!buf)) { send_unix_msg(sockd, "{}"); return; } send_unix_msg(sockd, buf); free(buf); }' src/ckpool.h \
+ && grep -Fq 'json_dumps(val, JSON_COMPACT)' src/ckpool.h \
  && ./autogen.sh \
  && ./configure \
  && make -j"$(nproc)" \
