@@ -501,6 +501,24 @@ function sessionShareCounts(clientsRaw) {
   return counts;
 }
 
+const sessionShareHighWater = new Map();
+
+function stableSessionShareCount(name, start, observed) {
+  const key = `${String(name || '')}:${Math.floor(number(start, 0))}`;
+  const value = Math.max(0, Math.floor(number(observed, 0)));
+  const previous = sessionShareHighWater.get(key) || 0;
+  const stable = Math.max(previous, value);
+
+  sessionShareHighWater.set(key, stable);
+
+  // Keep this tiny cache bounded if miners reconnect many times.
+  if (sessionShareHighWater.size > 256) {
+    const first = sessionShareHighWater.keys().next().value;
+    sessionShareHighWater.delete(first);
+  }
+
+  return stable;
+}
 function updateBestCandidate(
   candidates,
   name,
@@ -1174,7 +1192,9 @@ function normalizeWorkers(workersRaw, clientsRaw, shareEntries, sessionCounts = 
 
       shareDifficulty: diff,
       difficulty: diff,
-      shares:
+      shares: stableSessionShareCount(
+        name,
+        start,
         sessionCounts[name]
           ? Math.max(
               0,
@@ -1183,7 +1203,8 @@ function normalizeWorkers(workersRaw, clientsRaw, shareEntries, sessionCounts = 
                 0
               )
             )
-          : (shareCounts.get(name) || 0),
+          : (shareCounts.get(name) || 0)
+      ),
       bestDiff,
 
       connectedSeconds:
