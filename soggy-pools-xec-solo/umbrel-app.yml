@@ -3,7 +3,7 @@ id: soggy-pools-xec-solo
 category: bitcoin
 name: XEC Solo Pool
 icon: "https://raw.githubusercontent.com/SoggyHammyDev/soggy-pools/main/soggy-pools-xec-solo/icon.png?v=013"
-version: "0.1.7"
+version: "0.1.8"
 tagline: Solo mine eCash with Bitcoin ABC and CKPool
 description: >-
   A self-hosted eCash (XEC) SHA-256 solo mining pool for Umbrel. Runs Bitcoin ABC,
@@ -23,10 +23,7 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Fixes Umbrel cross-app Docker DNS collisions with the BCH Solo Pool by giving
-  every XEC service a unique network alias and isolating Bitcoin ABC + CKPool on a
-  private app-only bridge. The XEC dashboard can no longer resolve the BCH adapter
-  or CKPool by a generic service name. Keeps Bitcoin ABC 0.33.11, 5,000 MiB default
-  pruning, eCash-aware CKPool, port 3335 Stratum, and SoggyPools On Umbrel coinbase.
-submitter: SoggyHammyDev
-
+  Brings the XEC dashboard up to BCH-style parity with persistent Best Diff records,
+  actual per-session accepted share counts, cleaner miner names and natural sorting,
+  improved mining difficulty formatting, five-row Recent Shares, and safer difficulty
+  settings validation while preserving eCash Heartbeat / RTT target handling.

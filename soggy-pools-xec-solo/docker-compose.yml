@@ -5,14 +5,14 @@ services:
       APP_PORT: 8080
 
   xec-web:
-    image: ghcr.io/soggyhammydev/xec-solo-web:0.1.5
+    image: ghcr.io/soggyhammydev/xec-solo-web:0.1.8
     restart: on-failure
     stop_grace_period: 5s
     depends_on:
       - xec-adapter
 
   xec-adapter:
-    image: ghcr.io/soggyhammydev/xec-solo-adapter:0.1.7
+    image: ghcr.io/soggyhammydev/xec-solo-adapter:0.1.8
     restart: on-failure
     stop_grace_period: 5s
     environment:
@@ -38,7 +38,7 @@ services:
       - xec-internal
 
   xec-ckpool:
-    image: ghcr.io/soggyhammydev/xec-solo-ckpool:0.1.5
+    image: ghcr.io/soggyhammydev/xec-solo-ckpool:0.1.8
     restart: on-failure
     stop_grace_period: 10s
     environment:
@@ -59,7 +59,7 @@ services:
       - xec-internal
 
   xec-node:
-    image: ghcr.io/soggyhammydev/xec-solo-node:0.1.5
+    image: ghcr.io/soggyhammydev/xec-solo-node:0.1.8
     restart: on-failure
     stop_grace_period: 2m
     ports:

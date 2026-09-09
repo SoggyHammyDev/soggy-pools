@@ -628,9 +628,9 @@
         <div class="figure-sub" id="shares-rate-sub">&mdash;</div>
       </div>
       <div class="figure">
-        <div class="label">Closest share yet</div>
+        <div class="label">Best share</div>
         <div class="figure-v" id="best-share">&mdash;</div>
-        <div class="figure-sub">nearest any miner has come to a block</div>
+        <div class="figure-sub">highest share difficulty seen</div>
       </div>
     </div>
 
@@ -830,7 +830,7 @@
 
   <footer class="foot">
     <span id="updated-at">Connecting&hellip;</span>
-    <span>Best-share odds use the current XEC mining target, including Heartbeat / RTT when active.</span>
+    <span>Best-share comparisons use the current effective XEC mining target, including Heartbeat / RTT when active.</span>
   </footer>
 </div>
 
@@ -894,6 +894,49 @@ function compact(n) {
     }
   }
   return String(v);
+}
+
+function difficulty(n) {
+  const v = Number(n);
+
+  if (!Number.isFinite(v)) {
+    return '—';
+  }
+
+  /*
+   * XEC Heartbeat / RTT can temporarily push effective
+   * difficulty far above the normal plateau.
+   */
+  const units = [
+    [1e18, 'E'],
+    [1e15, 'P'],
+    [1e12, 'T'],
+    [1e9,  'G'],
+    [1e6,  'M'],
+    [1e3,  'K']
+  ];
+
+  for (const [limit, suffix] of units) {
+    if (Math.abs(v) >= limit) {
+      const scaled = v / limit;
+
+      return (
+        scaled
+          .toFixed(2)
+          .replace(/\.00$/, '')
+          .replace(/(\.\d)0$/, '$1') +
+        ' ' +
+        suffix
+      );
+    }
+  }
+
+  return v.toLocaleString(
+    undefined,
+    {
+      maximumFractionDigits: 2
+    }
+  );
 }
 
 function bytes(n) {
@@ -1083,47 +1126,219 @@ function setSettingsMessage(text, ok) {
 
 function applySettings(settings) {
   if (!settings) return;
-  $('payout-address').value = settings.payoutAddress || '';
-  $('storage-mode').value = settings.storageMode || 'pruned';
-  $('prune-target-mb').value = settings.pruneTargetMb || '5000';
-  $('start-diff-input').value = settings.startDiff || '1024';
-  $('vardiff-min-diff').value = settings.vardiffMinDiff || '1';
-  $('vardiff-max-diff').value = settings.vardiffMaxDiff ?? '0';
+
+  const payoutAddress = $('payout-address');
+  const storageMode = $('storage-mode');
+  const pruneTarget = $('prune-target-mb');
+
+  const minDiffInput = $('vardiff-min-diff');
+  const startDiffInput = $('start-diff-input');
+  const maxDiffInput = $('vardiff-max-diff');
+
+  if (payoutAddress) {
+    payoutAddress.value =
+      settings.payoutAddress || '';
+  }
+
+  if (storageMode) {
+    storageMode.value =
+      settings.storageMode || 'pruned';
+  }
+
+  if (pruneTarget) {
+    pruneTarget.value =
+      settings.pruneTargetMb ?? 5000;
+  }
+
+  if (minDiffInput) {
+    minDiffInput.value =
+      settings.vardiffMinDiff ?? 1;
+  }
+
+  if (startDiffInput) {
+    startDiffInput.value =
+      settings.startDiff ?? 1024;
+  }
+
+  if (maxDiffInput) {
+    maxDiffInput.value =
+      settings.vardiffMaxDiff ?? 0;
+  }
+
   syncPruneField();
 }
 
 function syncPruneField() {
-  const archive = $('storage-mode').value === 'archive';
-  $('prune-target-field').hidden = archive;
-  $('prune-target-mb').disabled = archive;
+  const storageMode = $('storage-mode');
+  const field = $('prune-target-field');
+  const input = $('prune-target-mb');
+
+  const archive =
+    storageMode &&
+    storageMode.value === 'archive';
+
+  if (field) {
+    field.hidden = Boolean(archive);
+  }
+
+  if (input) {
+    input.disabled = Boolean(archive);
+  }
 }
 
 async function saveSettings(ev) {
   ev.preventDefault();
+
   const btn = $('save-settings');
-  btn.disabled = true;
-  setSettingsMessage('Saving…', true);
+
+  if (btn) {
+    btn.disabled = true;
+  }
+
+  setSettingsMessage(
+    'Saving…',
+    true
+  );
+
   try {
-    const res = await fetch(apiUrl('api/settings'), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        payoutAddress: $('payout-address').value.trim(),
-        storageMode: $('storage-mode').value,
-        pruneTargetMb: $('prune-target-mb').value.trim(),
-        startDiff: $('start-diff-input').value.trim(),
-        vardiffMinDiff: $('vardiff-min-diff').value.trim(),
-        vardiffMaxDiff: $('vardiff-max-diff').value.trim(),
-      }),
-    });
+    const payoutAddress = $('payout-address');
+    const storageMode = $('storage-mode');
+    const pruneTarget = $('prune-target-mb');
+
+    const minEl = $('vardiff-min-diff');
+    const startEl = $('start-diff-input');
+    const maxEl = $('vardiff-max-diff');
+
+    if (
+      !payoutAddress ||
+      !storageMode ||
+      !pruneTarget ||
+      !minEl ||
+      !startEl ||
+      !maxEl
+    ) {
+      throw new Error(
+        'One or more Settings controls could not be found. Refresh the dashboard and try again.'
+      );
+    }
+
+    const pruneTargetMb =
+      Math.round(Number(pruneTarget.value));
+
+    const minDiff =
+      Math.round(Number(minEl.value));
+
+    const startDiff =
+      Math.round(Number(startEl.value));
+
+    const maxDiff =
+      Math.round(Number(maxEl.value));
+
+    if (
+      !Number.isFinite(pruneTargetMb) ||
+      pruneTargetMb < 1100 ||
+      pruneTargetMb > 500000
+    ) {
+      throw new Error(
+        'Prune target must be between 1,100 and 500,000 MiB.'
+      );
+    }
+
+    if (
+      !Number.isFinite(minDiff) ||
+      !Number.isFinite(startDiff) ||
+      !Number.isFinite(maxDiff)
+    ) {
+      throw new Error(
+        'Min, start, and max difficulty must be valid numbers.'
+      );
+    }
+
+    if (
+      minDiff < 1 ||
+      startDiff < 1 ||
+      maxDiff < 0
+    ) {
+      throw new Error(
+        'Minimum and start difficulty must be at least 1. Maximum may be 0 for unlimited.'
+      );
+    }
+
+    if (
+      maxDiff !== 0 &&
+      maxDiff < minDiff
+    ) {
+      throw new Error(
+        'Maximum difficulty must be 0 (unlimited) or at least the minimum difficulty.'
+      );
+    }
+
+    if (
+      startDiff < minDiff ||
+      (
+        maxDiff !== 0 &&
+        startDiff > maxDiff
+      )
+    ) {
+      throw new Error(
+        'Start difficulty must be between minimum and maximum difficulty.'
+      );
+    }
+
+    const res =
+      await fetch(
+        apiUrl('api/settings'),
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            payoutAddress:
+              payoutAddress.value.trim(),
+
+            storageMode:
+              storageMode.value,
+
+            pruneTargetMb,
+
+            startDiff,
+
+            vardiffMinDiff:
+              minDiff,
+
+            vardiffMaxDiff:
+              maxDiff
+          })
+        }
+      );
+
     const body = await res.json();
-    if (!res.ok) throw new Error(body.error || 'Could not save. Check the address and try again.');
+
+    if (!res.ok) {
+      throw new Error(
+        body.error ||
+        'Could not save settings.'
+      );
+    }
+
     applySettings(body.settings);
-    setSettingsMessage(body.message || 'Saved. Restart the app to apply the change.', true);
+
+    setSettingsMessage(
+      body.message ||
+      'Saved. Restart the app to apply the change.',
+      true
+    );
   } catch (err) {
-    setSettingsMessage(err.message || 'Could not save. Check the address and try again.', false);
+    setSettingsMessage(
+      err.message ||
+      'Could not save settings.',
+      false
+    );
   } finally {
-    btn.disabled = false;
+    if (btn) {
+      btn.disabled = false;
+    }
   }
 }
 
@@ -1163,80 +1378,217 @@ function blockResultTag(result) {
   return '<span class="tag ' + cls + '">' + esc(value || 'unknown') + '</span>';
 }
 
+function minerDisplayName(w) {
+  if (
+    w &&
+    w.displayName
+  ) {
+    return String(w.displayName);
+  }
+
+  const raw = String(
+    (
+      w &&
+      (
+        w.workerName ||
+        w.worker
+      )
+    ) ||
+    'miner'
+  );
+
+  const dot =
+    raw.indexOf('.');
+
+  return (
+    dot >= 0 &&
+    dot < raw.length - 1
+  )
+    ? raw.slice(dot + 1)
+    : raw;
+}
+
 function renderWorkers(workers, networkDiff) {
   const root = $('worker-cards');
+
   if (!workers.length) {
-    root.innerHTML = '<div class="empty"><strong>No miners connected</strong>' +
+    root.innerHTML =
+      '<div class="empty"><strong>No miners connected</strong>' +
       'Point a miner at the address on this page, then check back here.</div>';
+
     return;
   }
 
-  root.innerHTML = workers.map((w) => {
-    const ratio = oneIn(w.bestDiff, networkDiff);
-    const hit = ratio != null && ratio <= 1;
-    return '' +
-      '<article class="miner">' +
-        '<div class="miner-head">' +
-          '<div>' +
-            '<div class="miner-name">' + esc(w.workerName || w.worker || 'miner') + '</div>' +
-            '<div class="miner-sub">' + esc(w.userAgent || 'unknown miner software') + '</div>' +
-          '</div>' +
-          '<span class="pill pill--plain">up ' + duration(w.connectedSeconds) + '</span>' +
-        '</div>' +
-        '<div class="miner-grid">' +
-          '<div>' +
-            '<div class="label">Hashrate</div>' +
-            '<div class="miner-v" title="' + esc(num(w.hashrate1m)) + ' H/s">' + hashps(w.hashrate1m) + '</div>' +
-            '<div class="miner-vsub">1-minute share estimate</div>' +
-          '</div>' +
-          '<div>' +
-            '<div class="label">Shares</div>' +
-            '<div class="miner-v">' + num(w.shares) + '</div>' +
-            '<div class="miner-vsub">accepted from this miner</div>' +
-          '</div>' +
-          '<div>' +
-            '<div class="label">Difficulty</div>' +
-            '<div class="miner-v" title="' + esc(num(w.shareDifficulty)) + '">' + compact(w.shareDifficulty) + '</div>' +
-            '<div class="miner-vsub">auto-tuned to this miner</div>' +
-          '</div>' +
-          '<div>' +
-            '<div class="label">Best share</div>' +
-            '<div class="miner-v" title="' + esc(num(w.bestDiff)) + '">' + compact(w.bestDiff) + '</div>' +
-            '<div class="miner-vsub">highest difficulty seen</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="odds">' +
-          '<div class="odds-head">' +
-            '<span class="label">Closest this miner has come</span>' +
-            '<span class="odds-v">' + esc(oddsLabel(ratio)) + '</span>' +
-          '</div>' +
-          '<div class="odds-bar' + (hit ? ' is-hit' : '') + '">' +
-            '<i style="width:' + oddsFill(ratio).toFixed(1) + '%"></i>' +
-          '</div>' +
-          '<div class="odds-axis"><span>1 in 1M</span><span>1 in 1K</span><span>block</span></div>' +
-          '<p class="odds-note">' +
-            (hit
-              ? 'This miner has submitted a share good enough to be a block.'
-              : 'Log scale. Each step right is ten times closer — and a block is still pure chance.') +
-          '</p>' +
-        '</div>' +
-      '</article>';
-  }).join('');
+  const orderedWorkers =
+    [...workers].sort(
+      (a, b) =>
+        minerDisplayName(a)
+          .localeCompare(
+            minerDisplayName(b),
+            undefined,
+            {
+              numeric: true,
+              sensitivity: 'base'
+            }
+          )
+    );
+
+  root.innerHTML =
+    orderedWorkers
+      .map((w) => {
+        const best = Number(w.bestDiff);
+        const net = Number(networkDiff);
+
+        const percent =
+          Number.isFinite(best) &&
+          Number.isFinite(net) &&
+          best > 0 &&
+          net > 0
+            ? (best / net) * 100
+            : null;
+
+        const percentText =
+          percent == null
+            ? '—'
+            : percent >= 0.01
+              ? percent.toFixed(2) + '%'
+              : percent.toPrecision(3) + '%';
+
+        return '' +
+          '<article class="miner">' +
+
+            '<div class="miner-head">' +
+              '<div>' +
+
+                '<div class="miner-name">' +
+                  esc(minerDisplayName(w)) +
+                '</div>' +
+
+                '<div class="miner-sub">' +
+                  esc(
+                    w.userAgent ||
+                    'unknown miner software'
+                  ) +
+                '</div>' +
+
+              '</div>' +
+
+              '<span class="pill pill--plain">up ' +
+                duration(w.connectedSeconds) +
+              '</span>' +
+
+            '</div>' +
+
+            '<div class="miner-grid">' +
+
+              '<div>' +
+                '<div class="label">Hashrate</div>' +
+
+                '<div class="miner-v" title="' +
+                  esc(num(w.hashrate1m)) +
+                  ' H/s">' +
+                  hashps(w.hashrate1m) +
+                '</div>' +
+
+                '<div class="miner-vsub">share-based estimate</div>' +
+              '</div>' +
+
+              '<div>' +
+                '<div class="label">Shares</div>' +
+
+                '<div class="miner-v">' +
+                  num(w.shares) +
+                '</div>' +
+
+                '<div class="miner-vsub">accepted this session</div>' +
+              '</div>' +
+
+              '<div>' +
+                '<div class="label">Difficulty</div>' +
+
+                '<div class="miner-v" title="' +
+                  esc(num(w.shareDifficulty)) +
+                '">' +
+                  difficulty(w.shareDifficulty) +
+                '</div>' +
+
+                '<div class="miner-vsub">auto-tuned to this miner</div>' +
+              '</div>' +
+
+              '<div>' +
+                '<div class="label">Best share</div>' +
+
+                '<div class="miner-v" title="' +
+                  esc(num(w.bestDiff)) +
+                '">' +
+                  difficulty(w.bestDiff) +
+                '</div>' +
+
+                '<div class="miner-vsub">highest difficulty seen</div>' +
+              '</div>' +
+
+            '</div>' +
+
+            '<div class="odds">' +
+
+              '<div class="odds-head">' +
+                '<span class="label">Best share vs network</span>' +
+
+                '<span class="odds-v">' +
+                  esc(percentText) +
+                '</span>' +
+              '</div>' +
+
+              '<p class="odds-note">' +
+                'Best share difficulty compared with the current effective eCash network target.' +
+              '</p>' +
+
+            '</div>' +
+
+          '</article>';
+      })
+      .join('');
 }
 
 function renderShares(shareLog) {
-  $('share-rows').innerHTML = shareLog && shareLog.length
-    ? shareLog.map((s) =>
-        '<tr>' +
-          '<td>' + esc(s.workerName || s.worker || 'miner') + '</td>' +
-          '<td>' + shareResultTag(s) + '</td>' +
-          '<td class="n col-2" title="' + esc(num(s.shareDiff)) + '">' + compact(s.shareDiff) + '</td>' +
-          '<td class="n col-2" title="' + esc(num(s.networkDiff)) + '">' + compact(s.networkDiff) + '</td>' +
-          '<td class="time">' + esc(when(s.at)) + '</td>' +
-        '</tr>'
-      ).join('')
-    : '<tr><td colspan="5" class="empty"><strong>No shares yet</strong>' +
-      'Shares show up here within seconds of a miner connecting.</td></tr>';
+  $('share-rows').innerHTML =
+    shareLog &&
+    shareLog.length
+      ? shareLog
+          .slice(0, 5)
+          .map((s) =>
+            '<tr>' +
+
+              '<td>' +
+                esc(minerDisplayName(s)) +
+              '</td>' +
+
+              '<td>' +
+                shareResultTag(s) +
+              '</td>' +
+
+              '<td class="n col-2" title="' +
+                esc(num(s.shareDiff)) +
+              '">' +
+                difficulty(s.shareDiff) +
+              '</td>' +
+
+              '<td class="n col-2" title="' +
+                esc(num(s.networkDiff)) +
+              '">' +
+                difficulty(s.networkDiff) +
+              '</td>' +
+
+              '<td class="time">' +
+                esc(when(s.at)) +
+              '</td>' +
+
+            '</tr>'
+          )
+          .join('')
+
+      : '<tr><td colspan="5" class="empty"><strong>No shares yet</strong>' +
+        'Shares show up here within seconds of a miner connecting.</td></tr>';
 }
 
 function renderBlocks(blocks) {
@@ -1355,7 +1707,15 @@ async function tick() {
     const v = Number(w.bestDiff);
     return Number.isFinite(v) && v > acc ? v : acc;
   }, 0);
-  $('best-share').textContent = best > 0 ? oddsLabel(oneIn(best, d.pool.currentNetworkDiff)) : '—';
+  $('best-share').textContent =
+    best > 0
+      ? difficulty(best)
+      : '—';
+
+  $('best-share').title =
+    best > 0
+      ? num(best)
+      : '';
 
   /* --- diagnostics --- */
   $('height').textContent = num(d.node.height);
@@ -1377,10 +1737,12 @@ async function tick() {
   /* --- current job panel --- */
   $('settings-job').textContent = d.pool.job || '—';
   $('settings-job-height').textContent = num(d.pool.jobHeight);
-  $('settings-block-diff').textContent = compact(d.pool.currentNetworkDiff);
+  $('settings-block-diff').textContent =
+    difficulty(d.pool.currentNetworkDiff);
   $('current-block-bits').textContent = d.pool.currentBits ? 'target bits ' + d.pool.currentBits : '\u00a0';
   $('settings-rtt').textContent = d.pool.rttActive ? 'Active — RTT target in use' : 'Plateau / base target';
-  $('start-diff').textContent = compact(d.pool.startDiff);
+  $('start-diff').textContent =
+    difficulty(d.pool.startDiff);
   $('settings-share-target').textContent = d.pool.shareTarget
     ? String(d.pool.shareTarget).replace(/^0+/, '').slice(0, 16) + '…'
     : '—';

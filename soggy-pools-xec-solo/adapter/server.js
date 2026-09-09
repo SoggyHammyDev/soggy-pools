@@ -13,6 +13,9 @@ const RPC_USER = process.env.XEC_RPC_USER || 'umbrel-xec';
 const RPC_PASSWORD = process.env.XEC_RPC_PASSWORD || '';
 const STRATUM_PORT = Number(process.env.STRATUM_PORT || 3335);
 const SETTINGS_FILE = process.env.SETTINGS_FILE || '/data/settings.json';
+const WORKER_RECORDS_FILE =
+  process.env.WORKER_RECORDS_FILE ||
+  path.join(path.dirname(SETTINGS_FILE), 'worker-records.json');
 const CKPOOL_HOST = process.env.CKPOOL_HOST || 'ckpool';
 const CKPOOL_PORT = Number(process.env.CKPOOL_PORT || 3333);
 const CKPOOL_LOG_ROOT = process.env.CKPOOL_LOG_ROOT || '/var/lib/ckpool/logs';
@@ -110,6 +113,623 @@ function atomicWriteSettings(value) {
   const tmp = `${SETTINGS_FILE}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n');
   fs.renameSync(tmp, SETTINGS_FILE);
+}
+
+function emptyWorkerRecords() {
+  return {
+    version: 1,
+    networks: {}
+  };
+}
+
+function readWorkerRecords() {
+  try {
+    const raw = JSON.parse(
+      fs.readFileSync(
+        WORKER_RECORDS_FILE,
+        'utf8'
+      )
+    );
+
+    if (!raw || typeof raw !== 'object') {
+      return emptyWorkerRecords();
+    }
+
+    if (
+      !raw.networks ||
+      typeof raw.networks !== 'object'
+    ) {
+      raw.networks = {};
+    }
+
+    raw.version = 1;
+    return raw;
+  } catch {
+    return emptyWorkerRecords();
+  }
+}
+
+function atomicWriteWorkerRecords(value) {
+  fs.mkdirSync(
+    path.dirname(WORKER_RECORDS_FILE),
+    { recursive: true }
+  );
+
+  const tmp =
+    `${WORKER_RECORDS_FILE}.tmp`;
+
+  fs.writeFileSync(
+    tmp,
+    JSON.stringify(value, null, 2) + '\n'
+  );
+
+  fs.renameSync(
+    tmp,
+    WORKER_RECORDS_FILE
+  );
+}
+
+/*
+ * XEC CKPool mounts its share-log directory directly at
+ * /var/lib/ckpool/logs, unlike the BCH app which has
+ * network/logs directories below its root.
+ */
+function xecShareLogFiles() {
+  const out = [];
+  const stack = [CKPOOL_LOG_ROOT];
+
+  while (stack.length) {
+    const root = stack.pop();
+
+    let entries;
+
+    try {
+      entries = fs.readdirSync(
+        root,
+        { withFileTypes: true }
+      );
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const p = path.join(
+        root,
+        entry.name
+      );
+
+      if (entry.isDirectory()) {
+        stack.push(p);
+      } else if (
+        entry.isFile() &&
+        p.endsWith('.sharelog')
+      ) {
+        try {
+          out.push({
+            p,
+            s: fs.statSync(p)
+          });
+        } catch {}
+      }
+    }
+  }
+
+  return out;
+}
+
+function xecShareTimeMs(value, fallbackMs = 0) {
+  if (
+    typeof value === 'number' &&
+    Number.isFinite(value)
+  ) {
+    return value > 100000000000
+      ? value
+      : value * 1000;
+  }
+
+  const text =
+    String(value || '').trim();
+
+  const m =
+    text.match(/^(\d+)(?:,(\d+))?/);
+
+  if (m) {
+    const sec = Number(m[1]);
+    const ns = Number(m[2] || 0);
+
+    if (Number.isFinite(sec)) {
+      return (
+        sec * 1000 +
+        Math.floor(ns / 1e6)
+      );
+    }
+  }
+
+  const dateMs =
+    Date.parse(text);
+
+  return Number.isFinite(dateMs)
+    ? dateMs
+    : fallbackMs;
+}
+
+const XEC_SHARE_FILE_CACHE =
+  new Map();
+
+function readXecShareFile(file) {
+  const cached =
+    XEC_SHARE_FILE_CACHE.get(file.p);
+
+  if (
+    cached &&
+    cached.size === file.s.size &&
+    cached.mtimeMs === file.s.mtimeMs
+  ) {
+    return {
+      ok: true,
+      rows: cached.rows
+    };
+  }
+
+  let text;
+
+  try {
+    text = fs.readFileSync(
+      file.p,
+      'utf8'
+    );
+  } catch {
+    return {
+      ok: false,
+      rows: []
+    };
+  }
+
+  const rows = [];
+
+  for (
+    const line
+    of text.split(/\r?\n/)
+  ) {
+    if (
+      !line.trim().startsWith('{')
+    ) {
+      continue;
+    }
+
+    try {
+      const raw =
+        JSON.parse(line);
+
+      if (
+        raw.result !== true &&
+        raw.result !== false
+      ) {
+        continue;
+      }
+
+      const name =
+        String(
+          raw.workername ||
+          raw.username ||
+          raw.worker ||
+          ''
+        ).trim();
+
+      if (!name) continue;
+
+      const diff =
+        number(
+          raw.sdiff ??
+          raw.diff ??
+          raw.sharediff,
+          0
+        );
+
+      const atMs =
+        xecShareTimeMs(
+          raw.createdate ??
+          raw.timestamp ??
+          raw.time,
+          file.s.mtimeMs
+        );
+
+      const unique =
+        String(
+          raw.hash ||
+          raw.sharehash ||
+          raw.submitnonce ||
+          ''
+        );
+
+      rows.push({
+        name,
+        accepted:
+          raw.result === true,
+        diff,
+        atMs,
+        key:
+          unique ||
+          [
+            name,
+            atMs,
+            diff,
+            raw.result,
+            raw.nonce || ''
+          ].join('|')
+      });
+    } catch {}
+  }
+
+  XEC_SHARE_FILE_CACHE.set(
+    file.p,
+    {
+      size: file.s.size,
+      mtimeMs: file.s.mtimeMs,
+      rows
+    }
+  );
+
+  return {
+    ok: true,
+    rows
+  };
+}
+
+function friendlyWorkerName(name) {
+  const raw =
+    String(name || '').trim();
+
+  const dot =
+    raw.indexOf('.');
+
+  return (
+    dot >= 0 &&
+    dot < raw.length - 1
+  )
+    ? raw.slice(dot + 1)
+    : raw;
+}
+
+function sessionShareCounts(clientsRaw) {
+  const clientList =
+    Array.isArray(clientsRaw?.clients)
+      ? clientsRaw.clients
+      : [];
+
+  const starts =
+    new Map();
+
+  for (const client of clientList) {
+    if (client?.authorised === false) {
+      continue;
+    }
+
+    const name =
+      String(
+        client?.workername ||
+        client?.worker ||
+        ''
+      ).trim();
+
+    const start =
+      number(
+        client?.starttime,
+        0
+      );
+
+    if (!name || start <= 0) {
+      continue;
+    }
+
+    const previous =
+      starts.get(name);
+
+    if (
+      !previous ||
+      start < previous
+    ) {
+      starts.set(
+        name,
+        start
+      );
+    }
+  }
+
+  if (!starts.size) {
+    return {};
+  }
+
+  const oldestStartMs =
+    Math.min(
+      ...starts.values()
+    ) * 1000;
+
+  const files =
+    xecShareLogFiles()
+      .filter(
+        (file) =>
+          file.s.mtimeMs >=
+          oldestStartMs - 60000
+      );
+
+  const counts = {};
+  const seen = new Set();
+
+  for (const file of files) {
+    const parsed =
+      readXecShareFile(file);
+
+    if (!parsed.ok) {
+      continue;
+    }
+
+    for (const row of parsed.rows) {
+      const start =
+        starts.get(row.name);
+
+      if (!start) continue;
+
+      if (
+        row.atMs <
+        start * 1000
+      ) {
+        continue;
+      }
+
+      if (seen.has(row.key)) {
+        continue;
+      }
+
+      seen.add(row.key);
+
+      if (!counts[row.name]) {
+        counts[row.name] = {
+          accepted: 0,
+          rejected: 0
+        };
+      }
+
+      if (row.accepted) {
+        counts[row.name].accepted++;
+      } else {
+        counts[row.name].rejected++;
+      }
+    }
+  }
+
+  return counts;
+}
+
+function updateBestCandidate(
+  candidates,
+  name,
+  bestDiff
+) {
+  const worker =
+    String(name || '').trim();
+
+  const diff =
+    number(bestDiff, 0);
+
+  if (
+    !worker ||
+    !Number.isFinite(diff) ||
+    diff <= 0
+  ) {
+    return;
+  }
+
+  const previous =
+    number(
+      candidates.get(worker),
+      0
+    );
+
+  if (diff > previous) {
+    candidates.set(
+      worker,
+      diff
+    );
+  }
+}
+
+function persistentWorkerBests(
+  workersRaw,
+  clientsRaw,
+  shareEntries
+) {
+  const state =
+    readWorkerRecords();
+
+  if (
+    !state.networks.mainnet ||
+    typeof state.networks.mainnet !== 'object'
+  ) {
+    state.networks.mainnet = {
+      historyWatermarkMs: 0,
+      workers: {}
+    };
+  }
+
+  const networkState =
+    state.networks.mainnet;
+
+  if (
+    !networkState.workers ||
+    typeof networkState.workers !== 'object'
+  ) {
+    networkState.workers = {};
+  }
+
+  const candidates =
+    new Map();
+
+  const workerList =
+    Array.isArray(workersRaw?.workers)
+      ? workersRaw.workers
+      : [];
+
+  const clientList =
+    Array.isArray(clientsRaw?.clients)
+      ? clientsRaw.clients
+      : [];
+
+  for (const worker of workerList) {
+    updateBestCandidate(
+      candidates,
+      worker?.worker ||
+        worker?.workername,
+      worker?.bestdiff
+    );
+  }
+
+  for (const client of clientList) {
+    updateBestCandidate(
+      candidates,
+      client?.workername ||
+        client?.worker,
+      client?.bestdiff
+    );
+  }
+
+  for (
+    const share
+    of shareEntries || []
+  ) {
+    if (
+      share?.result !== 'accepted'
+    ) {
+      continue;
+    }
+
+    updateBestCandidate(
+      candidates,
+      share?.workerName ||
+        share?.worker,
+      share?.shareDiff
+    );
+  }
+
+  const oldWatermark =
+    Math.max(
+      0,
+      number(
+        networkState.historyWatermarkMs,
+        0
+      )
+    );
+
+  const allFiles =
+    xecShareLogFiles();
+
+  const files =
+    oldWatermark > 0
+      ? allFiles.filter(
+          (file) =>
+            file.s.mtimeMs >=
+            oldWatermark - 1000
+        )
+      : allFiles;
+
+  let newestScannedMtime =
+    oldWatermark;
+
+  let scanFailed = false;
+
+  for (const file of files) {
+    const parsed =
+      readXecShareFile(file);
+
+    if (!parsed.ok) {
+      scanFailed = true;
+      continue;
+    }
+
+    for (const row of parsed.rows) {
+      if (!row.accepted) {
+        continue;
+      }
+
+      updateBestCandidate(
+        candidates,
+        row.name,
+        row.diff
+      );
+    }
+
+    newestScannedMtime =
+      Math.max(
+        newestScannedMtime,
+        file.s.mtimeMs
+      );
+  }
+
+  let changed = false;
+
+  for (
+    const [name, bestDiff]
+    of candidates.entries()
+  ) {
+    const previous =
+      number(
+        networkState.workers[name]
+          ?.bestDiff,
+        0
+      );
+
+    if (
+      bestDiff <= previous
+    ) {
+      continue;
+    }
+
+    networkState.workers[name] = {
+      bestDiff,
+      updatedAt:
+        new Date().toISOString()
+    };
+
+    changed = true;
+  }
+
+  if (
+    !scanFailed &&
+    newestScannedMtime >
+      oldWatermark
+  ) {
+    networkState.historyWatermarkMs =
+      newestScannedMtime;
+
+    changed = true;
+  }
+
+  if (changed) {
+    atomicWriteWorkerRecords(
+      state
+    );
+  }
+
+  const out = {};
+
+  for (
+    const [name, record]
+    of Object.entries(
+      networkState.workers
+    )
+  ) {
+    const best =
+      number(
+        record?.bestDiff,
+        0
+      );
+
+    if (best > 0) {
+      out[name] = best;
+    }
+  }
+
+  return out;
 }
 
 function json(res, status, body) {
@@ -433,7 +1053,7 @@ function recentBlocks() {
   }).slice(0, 25);
 }
 
-function normalizeWorkers(workersRaw, clientsRaw, shareEntries) {
+function normalizeWorkers(workersRaw, clientsRaw, shareEntries, sessionCounts = {}, persistentBests = {}) {
   const workerList = Array.isArray(workersRaw?.workers) ? workersRaw.workers : [];
   const clientList = Array.isArray(clientsRaw?.clients) ? clientsRaw.clients : [];
 
@@ -529,6 +1149,7 @@ function normalizeWorkers(workersRaw, clientsRaw, shareEntries) {
       number(w.bestdiff, 0),
       ...clients.map((c) => number(c.bestdiff, 0)),
       bestShare.get(name) || 0,
+      number(persistentBests[name], 0),
       0
     );
 
@@ -540,6 +1161,7 @@ function normalizeWorkers(workersRaw, clientsRaw, shareEntries) {
     return {
       workerName: name,
       worker: name,
+      displayName: friendlyWorkerName(name),
       user: String(w.user || ''),
       userAgent: String(userAgent),
 
@@ -552,7 +1174,16 @@ function normalizeWorkers(workersRaw, clientsRaw, shareEntries) {
 
       shareDifficulty: diff,
       difficulty: diff,
-      shares: shareCounts.get(name) || 0,
+      shares:
+        sessionCounts[name]
+          ? Math.max(
+              0,
+              number(
+                sessionCounts[name].accepted,
+                0
+              )
+            )
+          : (shareCounts.get(name) || 0),
       bestDiff,
 
       connectedSeconds:
@@ -611,9 +1242,58 @@ async function status() {
   ]);
 
   const shareData = recentShareLog(currentNetworkDiff);
-  const workers = normalizeWorkers(workersRaw, clientsRaw, shareData.entries);
-  const accepted = number(poolstats?.shares, shareData.entries.filter((s) => s.result === 'accepted').length);
-  const rejected = shareData.entries.filter((s) => s.result === 'rejected').length;
+
+  const sessionCounts =
+    sessionShareCounts(
+      clientsRaw
+    );
+
+  const persistentBests =
+    persistentWorkerBests(
+      workersRaw,
+      clientsRaw,
+      shareData.entries
+    );
+
+  const workers =
+    normalizeWorkers(
+      workersRaw,
+      clientsRaw,
+      shareData.entries,
+      sessionCounts,
+      persistentBests
+    );
+
+  /*
+   * CKPool's poolstats.shares is difficulty-weighted work, not a
+   * count of submitted shares. Overview should agree with the miner
+   * cards, so use the actual accepted submissions for active sessions.
+   */
+  const accepted =
+    workers.reduce(
+      (sum, worker) =>
+        sum +
+        Math.max(
+          0,
+          number(worker.shares, 0)
+        ),
+      0
+    );
+
+  const rejected =
+    Object.values(sessionCounts)
+      .reduce(
+        (sum, count) =>
+          sum +
+          Math.max(
+            0,
+            number(
+              count?.rejected,
+              0
+            )
+          ),
+        0
+      );
   const uptimeSeconds = number(uptimeRaw?.uptime, poolstats?.start ? Math.max(0, Math.floor(Date.now() / 1000) - number(poolstats.start)) : 0);
 
   let poolStatus = 'offline';
