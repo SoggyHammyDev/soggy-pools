@@ -8,9 +8,11 @@ RUN apt-get update \
       ca-certificates git build-essential yasm autoconf automake libtool pkgconf libssl-dev libjansson-dev libzmq3-dev \
  && rm -rf /var/lib/apt/lists/*
 
+COPY fix-api-response.patch /tmp/fix-api-response.patch
 RUN git clone "$CKPOOL_REPO" /src/ecash-ckpool \
  && cd /src/ecash-ckpool \
  && git checkout "$CKPOOL_REF" \
+ && git apply /tmp/fix-api-response.patch \
  && ./autogen.sh \
  && ./configure \
  && make -j"$(nproc)" \
